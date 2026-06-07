@@ -27,7 +27,7 @@ final class FinalizeOccurredEventOrdersAction
      */
     public function handle(?CarbonImmutable $asOf = null): array
     {
-        $resolvedAt = $asOf ?? CarbonImmutable::now('UTC');
+        $resolvedAt = $asOf ?? CarbonImmutable::now();
 
         return $this->finalizeAcrossOwners($resolvedAt);
     }

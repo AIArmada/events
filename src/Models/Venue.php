@@ -21,7 +21,6 @@ use OwenIt\Auditing\Contracts\Auditable;
  * @property string|null $owner_id
  * @property string $name
  * @property string $slug
- * @property string $location_type
  * @property string|null $contact_name
  * @property string|null $contact_email
  * @property string|null $contact_phone
@@ -31,10 +30,6 @@ use OwenIt\Auditing\Contracts\Auditable;
  * @property string|null $state
  * @property string|null $postcode
  * @property string $country
- * @property string|null $latitude
- * @property string|null $longitude
- * @property string|null $map_url
- * @property string|null $external_id
  * @property string|null $timezone
  * @property string|null $notes
  * @property array<string, mixed>|null $metadata
@@ -54,7 +49,6 @@ class Venue extends Model implements Auditable
     protected $fillable = [
         'name',
         'slug',
-        'location_type',
         'contact_name',
         'contact_email',
         'contact_phone',
@@ -64,10 +58,6 @@ class Venue extends Model implements Auditable
         'state',
         'postcode',
         'country',
-        'latitude',
-        'longitude',
-        'map_url',
-        'external_id',
         'timezone',
         'notes',
         'metadata',
@@ -76,15 +66,12 @@ class Venue extends Model implements Auditable
     protected function casts(): array
     {
         return [
-            'latitude' => 'decimal:7',
-            'longitude' => 'decimal:7',
             'metadata' => 'array',
         ];
     }
 
     protected $attributes = [
         'country' => 'MY',
-        'location_type' => 'physical',
     ];
 
     public function getTable(): string

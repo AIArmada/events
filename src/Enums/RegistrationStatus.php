@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace AIArmada\Events\Enums;
 
-use AIArmada\Events\Support\LifecyclePolicy;
-
 enum RegistrationStatus: string
 {
     case Pending = 'pending';
@@ -44,7 +42,7 @@ enum RegistrationStatus: string
 
     public function canCheckIn(): bool
     {
-        return LifecyclePolicy::registrationCanCheckIn($this);
+        return $this === self::Confirmed;
     }
 
     /**
@@ -52,11 +50,16 @@ enum RegistrationStatus: string
      */
     public static function capacityBlockingValues(): array
     {
-        return LifecyclePolicy::registrationCapacityBlockingValues();
+        return [
+            self::Pending->value,
+            self::Confirmed->value,
+            self::CheckedIn->value,
+            self::NoShow->value,
+        ];
     }
 
     public function isTerminal(): bool
     {
-        return LifecyclePolicy::registrationIsTerminal($this);
+        return in_array($this, [self::CheckedIn, self::Cancelled, self::Refunded, self::NoShow], true);
     }
 }

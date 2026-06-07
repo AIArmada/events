@@ -21,7 +21,6 @@ return new class extends Migration
             $table->uuid('order_item_id')->nullable()->index();
             $table->uuid('purchaser_customer_id')->nullable()->index();
             $table->uuid('participant_customer_id')->nullable()->index();
-            $table->nullableUuidMorphs('attendee');
             $table->string('code')->unique();
             $table->string('status', 32)->default('pending')->index();
             $table->string('first_name');

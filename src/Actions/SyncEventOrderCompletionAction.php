@@ -25,14 +25,14 @@ final class SyncEventOrderCompletionAction
      */
     public function handle(Order $order, array $metadata = [], ?CarbonImmutable $asOf = null): bool
     {
-        $resolvedAt = $asOf ?? CarbonImmutable::now('UTC');
+        $resolvedAt = $asOf ?? CarbonImmutable::now();
 
         return $this->withRecordOwnerContext($order, fn (): bool => $this->syncWithinOwnerContext($order, $metadata, $resolvedAt));
     }
 
     public function handleCheckedInRegistration(RegistrationCheckedIn $event): void
     {
-        $resolvedAt = CarbonImmutable::now('UTC');
+        $resolvedAt = CarbonImmutable::now();
 
         $registration = Registration::query()
             ->withoutOwnerScope()
