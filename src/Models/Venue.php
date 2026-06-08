@@ -9,10 +9,12 @@ use AIArmada\CommerceSupport\Concerns\LogsCommerceActivity;
 use AIArmada\CommerceSupport\Support\OwnerContext;
 use AIArmada\CommerceSupport\Traits\HasOwner;
 use AIArmada\CommerceSupport\Traits\HasOwnerScopeConfig;
+use AIArmada\Events\Contracts\EventAddressable;
+use AIArmada\Events\Data\EventAddressData;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 use OwenIt\Auditing\Contracts\Auditable;
 
 /**
@@ -21,6 +23,7 @@ use OwenIt\Auditing\Contracts\Auditable;
  * @property string|null $owner_id
  * @property string $name
  * @property string $slug
+ * @property string $location_type
  * @property string|null $contact_name
  * @property string|null $contact_email
  * @property string|null $contact_phone
@@ -30,11 +33,15 @@ use OwenIt\Auditing\Contracts\Auditable;
  * @property string|null $state
  * @property string|null $postcode
  * @property string $country
+ * @property string|null $latitude
+ * @property string|null $longitude
+ * @property string|null $map_url
+ * @property string|null $external_id
  * @property string|null $timezone
  * @property string|null $notes
  * @property array<string, mixed>|null $metadata
  */
-class Venue extends Model implements Auditable
+class Venue extends Model implements Auditable, EventAddressable
 {
     use HasCommerceAudit;
     use HasOwner {
@@ -49,6 +56,7 @@ class Venue extends Model implements Auditable
     protected $fillable = [
         'name',
         'slug',
+        'location_type',
         'contact_name',
         'contact_email',
         'contact_phone',
@@ -58,6 +66,10 @@ class Venue extends Model implements Auditable
         'state',
         'postcode',
         'country',
+        'latitude',
+        'longitude',
+        'map_url',
+        'external_id',
         'timezone',
         'notes',
         'metadata',
@@ -66,12 +78,15 @@ class Venue extends Model implements Auditable
     protected function casts(): array
     {
         return [
+            'latitude' => 'decimal:7',
+            'longitude' => 'decimal:7',
             'metadata' => 'array',
         ];
     }
 
     protected $attributes = [
         'country' => 'MY',
+        'location_type' => 'physical',
     ];
 
     public function getTable(): string
@@ -104,10 +119,34 @@ class Venue extends Model implements Auditable
     }
 
     /**
-     * @return HasMany<Occurrence, $this>
+     * @return MorphMany<Occurrence, $this>
      */
-    public function occurrences(): HasMany
+    public function occurrences(): MorphMany
     {
-        return $this->hasMany(Occurrence::class, 'venue_id');
+        return $this->morphMany(Occurrence::class, 'address');
+    }
+
+    public function eventAddressData(): EventAddressData
+    {
+        $locationParts = collect([$this->city, $this->state, $this->postcode])
+            ->filter(static fn (mixed $value): bool => is_string($value) && mb_trim($value) !== '')
+            ->values()
+            ->all();
+
+        $lines = array_values(array_filter([
+            $this->line1,
+            $this->line2,
+            $locationParts !== [] ? implode(', ', $locationParts) : null,
+            $this->country,
+        ], static fn (mixed $value): bool => is_string($value) && mb_trim($value) !== ''));
+
+        return new EventAddressData(
+            label: $this->name,
+            lines: $lines,
+            latitude: $this->latitude,
+            longitude: $this->longitude,
+            country: $this->country,
+            timezone: $this->timezone,
+        );
     }
 }
