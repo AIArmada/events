@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace AIArmada\Events\Support;
+namespace AIArmada\Events\Support\Policy;
 
 use AIArmada\Events\Enums\OccurrenceStatus;
 use AIArmada\Events\Enums\RegistrationStatus;

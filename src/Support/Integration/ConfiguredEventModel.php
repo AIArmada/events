@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace AIArmada\Events\Support;
+namespace AIArmada\Events\Support\Integration;
 
 use Illuminate\Database\Eloquent\Model;
 use RuntimeException;

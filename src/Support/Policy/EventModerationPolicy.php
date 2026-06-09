@@ -2,24 +2,18 @@
 
 declare(strict_types=1);
 
-namespace AIArmada\Events\Support;
+namespace AIArmada\Events\Support\Policy;
 
 use AIArmada\Events\Enums\EventModerationStatus;
 use InvalidArgumentException;
 
 final class EventModerationPolicy
 {
-    /**
-     * @return list<string>
-     */
     public static function actionKeys(): array
     {
         return array_keys(self::transitionRules());
     }
 
-    /**
-     * @return list<string>
-     */
     public static function allowedActionsFor(EventModerationStatus $fromStatus): array
     {
         $current = $fromStatus->value;
@@ -86,9 +80,6 @@ final class EventModerationPolicy
             : null;
     }
 
-    /**
-     * @return array<string, array<string, mixed>>
-     */
     public static function reasonCodes(): array
     {
         $configured = config('events.moderation.reason_codes', []);
@@ -100,9 +91,6 @@ final class EventModerationPolicy
         return $configured;
     }
 
-    /**
-     * @return array<string, array<string, mixed>>
-     */
     public static function defaultReasonCodes(): array
     {
         return [
@@ -125,9 +113,6 @@ final class EventModerationPolicy
         ];
     }
 
-    /**
-     * @return array<string, array<string, mixed>>
-     */
     private static function transitionRules(): array
     {
         $configured = config('events.moderation.actions', []);
@@ -139,9 +124,6 @@ final class EventModerationPolicy
         return $configured;
     }
 
-    /**
-     * @return array<string, array<string, mixed>>
-     */
     private static function defaultTransitionRules(): array
     {
         return [
@@ -196,9 +178,6 @@ final class EventModerationPolicy
         ];
     }
 
-    /**
-     * @return array{from: list<string>, to: string, note_required: bool, reason_required: bool}
-     */
     private static function transitionRule(string $actionKey): array
     {
         $rules = self::transitionRules();

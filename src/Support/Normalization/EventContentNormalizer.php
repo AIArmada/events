@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace AIArmada\Events\Support;
+namespace AIArmada\Events\Support\Normalization;
 
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
