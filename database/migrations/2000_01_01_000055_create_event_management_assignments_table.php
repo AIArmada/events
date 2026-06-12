@@ -14,6 +14,9 @@ return new class extends Migration
 
         Schema::create(config('events.database.tables.event_management_assignments', 'event_management_assignments'), function (Blueprint $table) use ($jsonType): void {
             $table->uuid('id')->primary();
+            $table->uuid('event_id')->nullable()->index();
+            $table->uuid('event_occurrence_id')->nullable()->index();
+            $table->uuid('event_session_id')->nullable()->index();
             $table->string('manageable_type')->index();
             $table->uuid('manageable_id')->index();
             $table->string('manager_type')->index();
