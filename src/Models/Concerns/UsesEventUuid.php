@@ -8,13 +8,19 @@ use Illuminate\Support\Str;
 
 trait UsesEventUuid
 {
-    public $incrementing = false;
+    public function getIncrementing(): bool
+    {
+        return false;
+    }
 
-    protected $keyType = 'string';
+    public function getKeyType(): string
+    {
+        return 'string';
+    }
 
     protected static function bootUsesEventUuid(): void
     {
-        static::creating(function ($model) {
+        static::creating(function ($model): void {
             if (! $model->getKey()) {
                 $model->{$model->getKeyName()} = (string) Str::uuid();
             }
