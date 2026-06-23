@@ -22,6 +22,34 @@ The `config/events.php` file controls all Events package behavior.
 
 Every table name is individually configurable via environment variables, allowing collision-free coexistence with other packages.
 
+### Free-Only Mode
+
+```php
+'free_only' => [
+    'default_registration_mode' => env('EVENTS_DEFAULT_REGISTRATION_MODE', 'required'),
+    'auto_issue_passes_for_free' => env('EVENTS_AUTO_ISSUE_PASSES_FOR_FREE', true),
+    'auto_derive_pricing_from_ticket_types' => env('EVENTS_AUTO_DERIVE_PRICING', true),
+    'open_door_mode' => env('EVENTS_OPEN_DOOR_MODE', 'block'),
+],
+```
+
+| Key | Description |
+|---|---|
+| `default_registration_mode` | Fallback when no explicit `registration_mode` is set on an event. One of `required`, `optional`, `none`. |
+| `auto_issue_passes_for_free` | Default value for `issue_passes_for_free` when it is `null` at the event/occurrence/session level |
+| `auto_derive_pricing_from_ticket_types` | When `true`, pricing mode is automatically inferred from ticket type prices (all free → Free, all paid → Paid, mixed → Mixed) |
+| `open_door_mode` | Default behavior for events with `registration_mode = none`. One of `block`, `walk_in`, `headcount`. |
+
+### Paid Registrations
+
+```php
+'features' => [
+    'enforce_scope_capacity_on_paid_registrations' => env('EVENTS_ENFORCE_SCOPE_CAPACITY_PAID', false),
+]
+```
+
+When enabled, paid registration flows stop before creating new confirmed registrations if the target occurrence or session has no remaining capacity. Replaying an order item that already has registrations remains idempotent.
+
 ### Owner Scoping
 
 ```php
@@ -53,6 +81,17 @@ Controls multi-tenancy behavior. When enabled, all queries are scoped to the cur
 
 Controls auto-generated registration number format.
 
+### Inventory Backfill
+
+```php
+'inventory' => [
+    'default_location_id' => env('EVENTS_DEFAULT_INVENTORY_LOCATION', 'default'),
+    'auto_register_quotas_on_migrate' => env('EVENTS_AUTO_REGISTER_QUOTAS', true),
+]
+```
+
+`default_location_id` is used by the legacy quota migration to resolve the inventory location token. Runtime ticket-type syncing uses the inventory package's default location and only seeds positive quotas.
+
 ### Lifecycle
 
 ```php
@@ -71,7 +110,7 @@ Controls auto-generated registration number format.
 ]
 ```
 
-Controls which statuses allow registration, check-in, and walk-in. `capacity_blocking_statuses` determines which registration statuses consume occurrence capacity.
+Controls which statuses allow registration, check-in, and walk-in. `capacity_blocking_statuses` determines which registration statuses consume occurrence capacity. Statuses are managed through `spatie/laravel-model-states` — transitions are defined in each state base class's `config()` method under `States/`.
 
 ### Resolvers (extensibility seams)
 
@@ -94,12 +133,6 @@ Each resolver can be bound to a custom class for domain-specific behavior.
 
 ```php
 'moderation' => [
-    'actions' => [
-        'submit' => ['from' => ['draft', 'pending', 'approved', 'changes_requested', 'rejected'], 'to' => 'pending'],
-        'approve' => ['from' => ['pending', 'changes_requested'], 'to' => 'approved'],
-        'reject'  => ['from' => ['pending', 'approved', 'changes_requested'], 'to' => 'rejected'],
-        'cancel'  => ['from' => ['pending', 'approved', 'changes_requested', 'rejected'], 'to' => 'pending'],
-    ],
     'reason_codes' => [
         'approved_for_publish' => ['label' => 'Approved for Publish'],
         'needs_more_information' => ['label' => 'Needs More Information', 'note_required' => true],
@@ -107,7 +140,7 @@ Each resolver can be bound to a custom class for domain-specific behavior.
 ]
 ```
 
-Defines allowed moderation transitions and reason codes. Each action specifies valid `from` states, target `to` state, and whether notes/reasons are required.
+Defines moderation reason codes. State transitions are defined in `States/EventModerationStatus/EventModerationStatus.php` using `spatie/laravel-model-states`.
 
 ### Integrations
 
@@ -116,12 +149,13 @@ Defines allowed moderation transitions and reason codes. Each action specifies v
     'product_model' => class_exists(...) ? Product::class : null,
     'customer_model' => class_exists(...) ? Customer::class : null,
     'order_model' => class_exists(...) ? Order::class : null,
+    'addressing_enabled' => env('EVENTS_ADDRESSING_ENABLED', false),
     'checkout_intent_resolver' => null,
     'order_item_fulfillment_resolver' => null,
 ]
 ```
 
-Auto-detects commerce packages. When related packages are installed, integration features are automatically enabled. Custom resolvers can override default behavior.
+Auto-detects commerce packages. When related packages are installed, integration features are automatically enabled. Set `addressing_enabled` to `true` only when the `aiarmada/addressing` package is installed and its migrations have been run. Custom resolvers can override default behavior.
 
 ### Notifications
 

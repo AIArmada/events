@@ -8,6 +8,7 @@ use AIArmada\Contacting\Concerns\HasContactMethods;
 use AIArmada\Contacting\Concerns\HasSocialProfiles;
 use AIArmada\Contacting\Models\ContactMethod;
 use AIArmada\Events\Database\Factories\VenueFactory;
+use AIArmada\Events\Models\Concerns\Addressable;
 use AIArmada\Events\Models\Concerns\UsesEventUuid;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Collection;
@@ -27,7 +28,6 @@ use Illuminate\Support\Carbon;
  * @property string|null $line1
  * @property string|null $line2
  * @property string|null $city
- * @property string|null $district
  * @property string|null $state
  * @property string|null $postcode
  * @property string|null $country_code
@@ -57,6 +57,7 @@ use Illuminate\Support\Carbon;
  */
 final class Venue extends Model
 {
+    use Addressable;
     use HasContactMethods;
     use HasFactory;
     use HasSocialProfiles;
@@ -66,7 +67,7 @@ final class Venue extends Model
         'parent_venue_id',
         'name', 'slug', 'venue_type',
         'line1', 'line2',
-        'city', 'district', 'state', 'postcode', 'country_code', 'country',
+        'city', 'state', 'postcode', 'country_code', 'country',
         'latitude', 'longitude',
         'google_place_id', 'google_maps_url', 'waze_url', 'map_url',
         'directions',
