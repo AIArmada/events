@@ -4,81 +4,77 @@ declare(strict_types=1);
 
 namespace AIArmada\Events\Models;
 
-use AIArmada\Events\Database\Factories\EventSubmissionFactory;
-use AIArmada\Events\Models\Concerns\UsesEventUuid;
-use AIArmada\Events\States\EventModerationStatus\EventModerationStatus as EventModerationStatusState;
-use Carbon\CarbonImmutable;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
+use AIArmada\CommerceSupport\Concerns\HasCommerceAudit;
+use AIArmada\CommerceSupport\Concerns\LogsCommerceActivity;
+use AIArmada\CommerceSupport\Traits\HasOwner;
+use AIArmada\CommerceSupport\Traits\HasOwnerScopeConfig;
+use AIArmada\Events\Enums\EventModerationStatus;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Support\Carbon;
-use Spatie\ModelStates\HasStates;
+use OwenIt\Auditing\Contracts\Auditable;
 
 /**
  * @property string $id
- * @property string|null $submitter_type
- * @property string|null $submitter_id
- * @property string|null $target_type
- * @property string|null $target_id
+ * @property string|null $owner_type
+ * @property string|null $owner_id
+ * @property string|null $assignable_type
+ * @property string|null $assignable_id
  * @property string|null $event_id
- * @property string|null $event_occurrence_id
- * @property mixed|null $submission_data
- * @property EventModerationStatusState $status
- * @property CarbonImmutable|null $submitted_at
- * @property CarbonImmutable|null $reviewed_at
- * @property array|null $metadata
- * @property Carbon|null $created_at
- * @property Carbon|null $updated_at
+ * @property string|null $submitted_by_type
+ * @property string|null $submitted_by_id
+ * @property string $status
+ * @property Carbon|null $submitted_at
+ * @property string|null $notes
+ * @property array<string, mixed>|null $metadata
  */
-class EventSubmission extends Model
+class EventSubmission extends Model implements Auditable
 {
-    use HasFactory;
-    use HasStates;
-    use UsesEventUuid;
+    use HasCommerceAudit;
+    use HasOwner;
+    use HasOwnerScopeConfig;
+    use HasUuids;
+    use LogsCommerceActivity;
+
+    protected static string $ownerScopeConfigKey = 'events.features.owner';
 
     protected $fillable = [
-        'submitter_type', 'submitter_id',
-        'target_type', 'target_id',
-        'event_id', 'event_occurrence_id',
-        'submission_data',
+        'assignable_type',
+        'assignable_id',
+        'submitted_by_type',
+        'submitted_by_id',
         'status',
-        'submitted_at', 'reviewed_at',
+        'submitted_at',
+        'notes',
         'metadata',
     ];
 
-    public function getTable(): string
-    {
-        return config('events.database.tables.event_submissions', 'event_submissions');
-    }
+    protected $attributes = [
+        'status' => 'draft',
+    ];
 
     protected function casts(): array
     {
         return [
-            'status' => EventModerationStatusState::class,
-            'submission_data' => 'array',
             'submitted_at' => 'immutable_datetime',
-            'reviewed_at' => 'immutable_datetime',
             'metadata' => 'array',
         ];
     }
 
-    /**
-     * @return MorphTo<Model, $this>
-     */
-    public function submitter(): MorphTo
+    public function getTable(): string
     {
-        return $this->morphTo();
+        return config('events.database.tables.submissions', 'event_submissions');
     }
 
     /**
      * @return MorphTo<Model, $this>
      */
-    public function target(): MorphTo
+    public function assignable(): MorphTo
     {
-        return $this->morphTo();
+        return $this->morphTo(__FUNCTION__, 'assignable_type', 'assignable_id');
     }
 
     /**
@@ -90,39 +86,24 @@ class EventSubmission extends Model
     }
 
     /**
-     * @return BelongsTo<EventOccurrence, $this>
+     * @return MorphTo<Model, $this>
      */
-    public function occurrence(): BelongsTo
+    public function submittedBy(): MorphTo
     {
-        return $this->belongsTo(EventOccurrence::class, 'event_occurrence_id');
+        return $this->morphTo(__FUNCTION__, 'submitted_by_type', 'submitted_by_id');
     }
 
     /**
-     * @return HasMany<EventSubmissionLog, $this>
+     * @return HasMany<EventReview, $this>
      */
-    public function logs(): HasMany
+    public function reviews(): HasMany
     {
-        return $this->hasMany(EventSubmissionLog::class);
+        return $this->hasMany(EventReview::class, 'event_submission_id');
     }
 
-    /**
-     * @return HasMany<EventSubmissionAttachment, $this>
-     */
-    public function attachments(): HasMany
+    public function submit(): void
     {
-        return $this->hasMany(EventSubmissionAttachment::class);
-    }
-
-    /**
-     * @return MorphMany<EventApprovalRequest, $this>
-     */
-    public function approvalRequests(): MorphMany
-    {
-        return $this->morphMany(EventApprovalRequest::class, 'approvable');
-    }
-
-    protected static function newFactory(): EventSubmissionFactory
-    {
-        return EventSubmissionFactory::new();
+        $this->status = EventModerationStatus::Pending->value;
+        $this->submitted_at ??= now();
     }
 }

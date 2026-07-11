@@ -4,186 +4,153 @@ declare(strict_types=1);
 
 namespace AIArmada\Events\Models;
 
-use AIArmada\Contacting\Concerns\HasContactMethods;
-use AIArmada\Contacting\Concerns\HasSocialProfiles;
-use AIArmada\Contacting\Models\ContactMethod;
-use AIArmada\Events\Database\Factories\VenueFactory;
-use AIArmada\Events\Models\Concerns\Addressable;
-use AIArmada\Events\Models\Concerns\UsesEventUuid;
-use Carbon\CarbonImmutable;
-use Illuminate\Database\Eloquent\Collection;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
+use AIArmada\CommerceSupport\Concerns\HasCommerceAudit;
+use AIArmada\CommerceSupport\Concerns\LogsCommerceActivity;
+use AIArmada\CommerceSupport\Support\OwnerContext;
+use AIArmada\CommerceSupport\Traits\HasOwner;
+use AIArmada\CommerceSupport\Traits\HasOwnerScopeConfig;
+use AIArmada\Events\Contracts\EventAddressable;
+use AIArmada\Events\Data\EventAddressData;
+use AIArmada\Events\Enums\VenueStatus;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
-use Illuminate\Support\Carbon;
-use Spatie\MediaLibrary\HasMedia;
-use Spatie\MediaLibrary\InteractsWithMedia;
+use OwenIt\Auditing\Contracts\Auditable;
 
 /**
  * @property string $id
- * @property string|null $parent_venue_id
+ * @property string|null $owner_type
+ * @property string|null $owner_id
  * @property string $name
  * @property string $slug
- * @property string $venue_type
+ * @property VenueStatus $status
+ * @property string $location_type
+ * @property string|null $contact_name
+ * @property string|null $contact_email
+ * @property string|null $contact_phone
  * @property string|null $line1
  * @property string|null $line2
  * @property string|null $city
  * @property string|null $state
  * @property string|null $postcode
- * @property string|null $country_code
- * @property string|null $country
- * @property float|null $latitude
- * @property float|null $longitude
- * @property string|null $google_place_id
- * @property string|null $google_maps_url
- * @property string|null $waze_url
+ * @property string $country
+ * @property string|null $latitude
+ * @property string|null $longitude
  * @property string|null $map_url
- * @property string|null $directions
- * @property CarbonImmutable|null $geocoded_at
- * @property string|null $geocoding_source
- * @property string $status
- * @property string $visibility
- * @property-read string|null $phone
- * @property-read string|null $email
- * @property-read string|null $website_url
- * @property array|null $metadata
- * @property Carbon|null $created_at
- * @property Carbon|null $updated_at
- * @property-read Venue|null $parentVenue
- * @property-read Collection<int, Venue> $childVenues
- * @property-read Collection<int, VenueSpace> $spaces
- * @property-read Collection<int, VenueFacility> $facilities
- * @property-read Collection<int, EventLocation> $eventLocations
+ * @property string|null $external_id
+ * @property string|null $timezone
+ * @property string|null $notes
+ * @property array<string, mixed>|null $metadata
  */
-class Venue extends Model implements HasMedia
+class Venue extends Model implements Auditable, EventAddressable
 {
-    use Addressable;
-    use HasContactMethods;
-    use HasFactory;
-    use HasSocialProfiles;
-    use InteractsWithMedia;
-    use UsesEventUuid;
+    use HasCommerceAudit;
+    use HasOwner {
+        scopeForOwner as baseScopeForOwner;
+    }
+    use HasOwnerScopeConfig;
+    use HasUuids;
+    use LogsCommerceActivity;
+
+    protected static string $ownerScopeConfigKey = 'events.features.owner';
 
     protected $fillable = [
-        'parent_venue_id',
-        'name', 'slug', 'venue_type',
-        'line1', 'line2',
-        'city', 'state', 'postcode', 'country_code', 'country',
-        'latitude', 'longitude',
-        'google_place_id', 'google_maps_url', 'waze_url', 'map_url',
-        'directions',
-        'geocoded_at', 'geocoding_source',
-        'status', 'visibility',
+        'status',
+        'name',
+        'slug',
+        'location_type',
+        'contact_name',
+        'contact_email',
+        'contact_phone',
+        'line1',
+        'line2',
+        'city',
+        'state',
+        'postcode',
+        'country',
+        'latitude',
+        'longitude',
+        'map_url',
+        'external_id',
+        'timezone',
+        'notes',
         'metadata',
     ];
-
-    public function getTable(): string
-    {
-        return config('events.database.tables.venues', 'venues');
-    }
 
     protected function casts(): array
     {
         return [
-            'latitude' => 'float',
-            'longitude' => 'float',
-            'geocoded_at' => 'immutable_datetime',
+            'status' => VenueStatus::class,
+            'latitude' => 'decimal:7',
+            'longitude' => 'decimal:7',
             'metadata' => 'array',
         ];
     }
 
-    public function getPhoneAttribute(): ?string
-    {
-        return $this->resolvePrimaryContactValue('phone');
-    }
+    protected $attributes = [
+        'status' => 'active',
+        'country' => 'MY',
+        'location_type' => 'physical',
+    ];
 
-    public function getEmailAttribute(): ?string
+    public function getTable(): string
     {
-        return $this->resolvePrimaryContactValue('email');
-    }
-
-    public function getWebsiteUrlAttribute(): ?string
-    {
-        return $this->resolvePrimaryContactValue('website');
+        return config('events.database.tables.venues', 'event_venues');
     }
 
     /**
-     * @return BelongsTo<Venue, $this>
+     * @param  Builder<static>  $query
+     * @return Builder<static>
      */
-    public function parentVenue(): BelongsTo
+    public function scopeForOwner(Builder $query, ?Model $owner = null, bool $includeGlobal = false): Builder
     {
-        return $this->belongsTo(self::class, 'parent_venue_id');
-    }
+        $ownerToScope = $owner;
 
-    /**
-     * @return HasMany<Venue, $this>
-     */
-    public function childVenues(): HasMany
-    {
-        return $this->hasMany(self::class, 'parent_venue_id');
-    }
-
-    /**
-     * @return HasMany<VenueSpace, $this>
-     */
-    public function spaces(): HasMany
-    {
-        return $this->hasMany(VenueSpace::class);
-    }
-
-    /**
-     * @return HasMany<VenueFacility, $this>
-     */
-    public function facilities(): HasMany
-    {
-        return $this->hasMany(VenueFacility::class);
-    }
-
-    /**
-     * @return MorphMany<EventLocation, $this>
-     */
-    public function eventLocations(): MorphMany
-    {
-        return $this->morphMany(EventLocation::class, 'locationable');
-    }
-
-    private function resolvePrimaryContactValue(string $type): ?string
-    {
-        $contactMethod = $this->primaryContactMethod($type);
-
-        if (! $contactMethod instanceof ContactMethod) {
-            return null;
+        if (func_num_args() < 2) {
+            $ownerToScope = OwnerContext::CURRENT;
         }
 
-        $value = $contactMethod->normalized_value ?? $contactMethod->value;
+        $includeGlobalToScope = $includeGlobal;
 
-        if (! is_string($value)) {
-            return null;
+        if (func_num_args() < 3) {
+            $includeGlobalToScope = (bool) config('events.features.owner.include_global', false);
         }
 
-        $value = mb_trim($value);
+        $scoped = $this->baseScopeForOwner($query, $ownerToScope, $includeGlobalToScope);
 
-        return $value === '' ? null : $value;
+        return $scoped;
     }
 
-    protected static function newFactory(): VenueFactory
+    /**
+     * @return MorphMany<Occurrence, $this>
+     */
+    public function occurrences(): MorphMany
     {
-        return VenueFactory::new();
+        return $this->morphMany(Occurrence::class, 'address');
     }
 
-    public function registerMediaCollections(): void
+    public function eventAddressData(): EventAddressData
     {
-        $this->addMediaCollection('cover')
-            ->useDisk(config('media-library.disk_name'))
-            ->acceptsMimeTypes(['image/jpeg', 'image/png', 'image/webp'])
-            ->withResponsiveImages()
-            ->singleFile();
+        $locationParts = collect([$this->city, $this->state, $this->postcode])
+            ->filter(static fn (mixed $value): bool => is_string($value) && mb_trim($value) !== '')
+            ->values()
+            ->all();
 
-        $this->addMediaCollection('gallery')
-            ->useDisk(config('media-library.disk_name'))
-            ->acceptsMimeTypes(['image/jpeg', 'image/png', 'image/webp'])
-            ->withResponsiveImages();
+        $lines = array_values(array_filter([
+            $this->line1,
+            $this->line2,
+            $locationParts !== [] ? implode(', ', $locationParts) : null,
+            $this->country,
+        ], static fn (mixed $value): bool => is_string($value) && mb_trim($value) !== ''));
+
+        return new EventAddressData(
+            label: $this->name,
+            lines: $lines,
+            latitude: $this->latitude,
+            longitude: $this->longitude,
+            country: $this->country,
+            timezone: $this->timezone,
+        );
     }
 }
