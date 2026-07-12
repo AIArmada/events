@@ -4,867 +4,651 @@ declare(strict_types=1);
 
 namespace AIArmada\Events\Models;
 
-use AIArmada\CommerceSupport\Concerns\HasCommerceAudit;
-use AIArmada\CommerceSupport\Concerns\LogsCommerceActivity;
-use AIArmada\CommerceSupport\Support\OwnerContext;
 use AIArmada\CommerceSupport\Traits\HasOwner;
 use AIArmada\CommerceSupport\Traits\HasOwnerScopeConfig;
-use AIArmada\Events\Actions\SynchronizeEventContent;
-use AIArmada\Events\Contracts\EventDisplayTimezoneResolver;
-use AIArmada\Events\Contracts\EventRelationalContentSubject;
-use AIArmada\Events\Contracts\EventSearchPayloadResolver;
-use AIArmada\Events\Enums\EventFormat;
-use AIArmada\Events\Enums\EventModerationStatus;
-use AIArmada\Events\Enums\EventStatus;
-use AIArmada\Events\Enums\EventStructure;
-use AIArmada\Events\Enums\EventVisibility;
-use AIArmada\Events\Enums\OccurrenceStatus;
-use AIArmada\Events\Events\EventActivated;
-use AIArmada\Events\Events\EventArchived;
-use AIArmada\Events\Events\EventCancelled;
-use AIArmada\Events\Exceptions\InvalidEventStatusTransition;
-use AIArmada\Events\Support\Integration\CommerceIntegration;
-use AIArmada\Events\Support\Integration\ConfiguredEventModel;
+use AIArmada\Contacting\Concerns\HasContactMethods;
+use AIArmada\Contacting\Concerns\HasSocialProfiles;
+use AIArmada\Events\Database\Factories\EventFactory;
+use AIArmada\Events\Enums\PricingMode;
+use AIArmada\Events\Enums\RegistrationMode;
+use AIArmada\Events\Models\Concerns\UsesEventUuid;
+use AIArmada\Events\States\EventStatus\EventStatus as EventStatusState;
+use AIArmada\Events\States\EventStatus\Published;
+use AIArmada\Seating\Models\SeatMap;
+use AIArmada\Ticketing\Models\Pass;
+use AIArmada\Ticketing\Models\TicketType;
 use Carbon\CarbonImmutable;
+use Eloquent;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Collection;
-use OwenIt\Auditing\Contracts\Auditable;
+use Illuminate\Support\Facades\URL;
+use Spatie\MediaLibrary\HasMedia;
+use Spatie\MediaLibrary\InteractsWithMedia;
+use Spatie\ModelStates\HasStates;
 
 /**
  * @property string $id
  * @property string|null $owner_type
  * @property string|null $owner_id
- * @property string|null $organizer_type
- * @property string|null $organizer_id
- * @property string|null $event_series_id
- * @property string|null $parent_event_id
- * @property string|null $product_id
- * @property string $name
+ * @property string|null $created_by_type
+ * @property string|null $created_by_id
+ * @property string $title
  * @property string $slug
  * @property string|null $summary
  * @property string|null $description
- * @property EventStatus $status
- * @property EventModerationStatus $moderation_status
- * @property EventVisibility $visibility
- * @property EventFormat $format
- * @property EventStructure $structure
- * @property EventFormat $format
- * @property EventStructure $structure
- * @property int|null $default_duration_minutes
- * @property string|null $default_timezone
+ * @property string $type
+ * @property EventStatusState $status
+ * @property string $visibility
+ * @property string $delivery_mode
+ * @property string $timezone
+ * @property string|null $default_venue_id
  * @property CarbonImmutable|null $published_at
- * @property CarbonImmutable|null $public_starts_at
- * @property CarbonImmutable|null $public_ends_at
  * @property CarbonImmutable|null $cancelled_at
  * @property CarbonImmutable|null $postponed_at
- * @property CarbonImmutable|null $delayed_at
- * @property string|null $last_state_change_actor_type
- * @property string|null $last_state_change_actor_id
- * @property string|null $last_state_change_note
- * @property CarbonImmutable|null $activated_at
  * @property CarbonImmutable|null $archived_at
+ * @property CarbonImmutable|null $completed_at
  * @property CarbonImmutable|null $last_state_change_at
- * @property array<string, mixed>|null $media_references
- * @property array<string, mixed>|null $taxonomy
- * @property string|null $search_keywords
- * @property array<string, mixed>|null $metadata
- * @property bool $registration_required
+ * @property string|null $status_reason
+ * @property string|null $status_message
+ * @property string|null $pricing_mode
+ * @property string|null $registration_mode
+ * @property bool|null $issue_passes_for_free
+ * @property array|null $metadata
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ * @property-read Collection<int, EventOccurrence> $occurrences
+ * @property-read Collection<int, EventSession> $sessions
+ * @property-read Collection<int, EventLocation> $locations
+ * @property-read Collection<int, EventFacility> $facilities
+ * @property-read Collection<int, EventInvolvement> $involvements
+ * @property-read Collection<int, EventAccessPolicy> $accessPolicies
+ * @property-read Collection<int, EventRegistration> $registrations
+ * @property-read Collection<int, TicketType> $ticketTypes
+ * @property-read Collection<int, Pass> $passes
+ * @property-read Collection<int, EventAttendance> $attendances
+ * @property-read Collection<int, EventMaterial> $materials
+ * @property-read Collection<int, EventReference> $references
+ * @property-read Collection<int, EventLink> $links
+ * @property-read Collection<int, EventMedia> $mediaRecords
+ * @property-read Collection<int, EventLanguage> $languages
+ * @property-read Collection<int, EventAudience> $audiences
+ * @property-read Collection<int, EventAudienceProfile> $audienceProfiles
+ * @property-read Collection<int, EventEligibilityRule> $eligibilityRules
+ * @property-read Collection<int, EventClassification> $classifications
+ * @property-read Collection<int, EventTimeExpression> $timeExpressions
+ * @property-read Collection<int, EventItinerary> $itineraries
+ * @property-read Collection<int, EventChangeLog> $changeLogs
+ * @property-read Collection<int, EventUpdate> $updates
+ * @property-read Collection<int, EventNotificationBatch> $notificationBatches
+ * @property-read Collection<int, SeatMap> $seatMaps
+ * @property-read Model|Eloquent $owner
+ * @property-read Model|Eloquent $createdBy
  */
-class Event extends Model implements Auditable, EventRelationalContentSubject
+class Event extends Model implements HasMedia
 {
-    use HasCommerceAudit;
-    use HasOwner {
-        scopeForOwner as baseScopeForOwner;
-    }
+    use HasContactMethods;
+    use HasFactory;
+    use HasOwner;
     use HasOwnerScopeConfig;
-    use HasUuids;
-    use LogsCommerceActivity;
+    use HasSocialProfiles;
+    use HasStates;
+    use InteractsWithMedia;
+    use UsesEventUuid;
 
     protected static string $ownerScopeConfigKey = 'events.features.owner';
 
+    public const DRAFT = 'draft';
+
+    public const PENDING_REVIEW = 'pending_review';
+
+    public const SCHEDULED = 'scheduled';
+
+    public const PUBLISHED = 'published';
+
+    public const DELAYED = 'delayed';
+
+    public const POSTPONED = 'postponed';
+
+    public const RESCHEDULED = 'rescheduled';
+
+    public const CANCELLED = 'cancelled';
+
+    public const COMPLETED = 'completed';
+
+    public const ARCHIVED = 'archived';
+
+    public const VOIDED = 'voided';
+
+    public const EXPIRED = 'expired';
+
+    public const PUBLIC = 'public';
+
+    public const UNLISTED = 'unlisted';
+
+    public const PRIVATE = 'private';
+
+    public const REGISTERED_ONLY = 'registered_only';
+
+    public const ATTENDEES_ONLY = 'attendees_only';
+
+    public const MANAGERS_ONLY = 'managers_only';
+
+    public const INTERNAL = 'internal';
+
+    public const DELIVERY_PHYSICAL = 'physical';
+
+    public const DELIVERY_ONLINE = 'online';
+
+    public const DELIVERY_HYBRID = 'hybrid';
+
     protected $fillable = [
-        'event_series_id',
-        'parent_event_id',
-        'organizer_type',
-        'organizer_id',
-        'product_id',
-        'name',
-        'slug',
-        'summary',
-        'description',
-        'status',
-        'moderation_status',
-        'visibility',
-        'default_duration_minutes',
-        'default_timezone',
-        'published_at',
-        'public_starts_at',
-        'public_ends_at',
-        'cancelled_at',
-        'postponed_at',
-        'delayed_at',
-        'last_state_change_actor_type',
-        'last_state_change_actor_id',
-        'last_state_change_note',
-        'activated_at',
-        'archived_at',
-        'last_state_change_at',
-        'media_references',
-        'taxonomy',
-        'search_keywords',
+        'owner_type', 'owner_id',
+        'created_by_type', 'created_by_id',
+        'title', 'slug', 'summary', 'description',
+        'type', 'status', 'visibility', 'delivery_mode',
+        'timezone', 'default_venue_id',
+        'pricing_mode', 'registration_mode', 'issue_passes_for_free',
+        'published_at', 'cancelled_at', 'postponed_at', 'archived_at', 'completed_at',
+        'status_reason', 'status_message',
         'metadata',
-        'format',
-        'structure',
-        'registration_required',
     ];
-
-    protected function casts(): array
-    {
-        return [
-            'status' => EventStatus::class,
-            'format' => EventFormat::class,
-            'moderation_status' => EventModerationStatus::class,
-            'visibility' => EventVisibility::class,
-            'structure' => EventStructure::class,
-            'default_duration_minutes' => 'integer',
-            'published_at' => 'immutable_datetime',
-            'public_starts_at' => 'immutable_datetime',
-            'public_ends_at' => 'immutable_datetime',
-            'cancelled_at' => 'immutable_datetime',
-            'postponed_at' => 'immutable_datetime',
-            'delayed_at' => 'immutable_datetime',
-            'activated_at' => 'immutable_datetime',
-            'archived_at' => 'immutable_datetime',
-            'last_state_change_at' => 'immutable_datetime',
-            'media_references' => 'array',
-            'taxonomy' => 'array',
-            'metadata' => 'array',
-            'registration_required' => 'boolean',
-        ];
-    }
-
-    protected $attributes = [
-        'status' => 'draft',
-        'format' => 'physical',
-        'moderation_status' => 'approved',
-        'visibility' => 'public',
-        'structure' => 'standalone',
-    ];
-
-    public function getTitleAttribute(): string
-    {
-        return $this->name;
-    }
-
-    protected static function booted(): void
-    {
-        static::creating(function (self $event): void {
-            if ($event->getAttribute('structure') instanceof EventStructure) {
-                return;
-            }
-
-            $configuredStructure = config('events.defaults.event_structure', EventStructure::Standalone->value);
-
-            if (is_string($configuredStructure) && EventStructure::tryFrom($configuredStructure) instanceof EventStructure) {
-                $event->setAttribute('structure', $configuredStructure);
-
-                return;
-            }
-
-            $event->setAttribute('structure', EventStructure::Standalone->value);
-        });
-
-        static::updating(function (self $event): void {
-            if (! $event->isDirty('status')) {
-                return;
-            }
-
-            $current = $event->getOriginal('status');
-            $next = $event->status;
-
-            if (! $next instanceof EventStatus) {
-                return;
-            }
-
-            $currentStatus = $current instanceof EventStatus
-                ? $current
-                : (is_string($current) ? EventStatus::tryFrom($current) : null);
-
-            if ($currentStatus !== null && $currentStatus === $next) {
-                return;
-            }
-
-            if ($currentStatus !== null && ! $currentStatus->canTransitionTo($next)) {
-                throw InvalidEventStatusTransition::from($currentStatus, $next);
-            }
-
-            $now = now();
-
-            if ($next === EventStatus::Active && $event->activated_at === null) {
-                $event->activated_at = $now->toImmutable();
-            }
-
-            if ($next === EventStatus::Archived && $event->archived_at === null) {
-                $event->archived_at = $now->toImmutable();
-            }
-
-            if ($next === EventStatus::Cancelled && $event->cancelled_at === null) {
-                $event->cancelled_at = $now->toImmutable();
-            }
-        });
-
-        static::saved(function (self $event): void {
-            if ($event->wasChanged('status')) {
-                $next = $event->status;
-
-                if ($next === EventStatus::Active) {
-                    event(new EventActivated($event));
-                } elseif ($next === EventStatus::Archived) {
-                    event(new EventArchived($event));
-                } elseif ($next === EventStatus::Cancelled) {
-                    event(new EventCancelled($event));
-                }
-
-                if ($next->isTerminal()) {
-                    $event->occurrences()
-                        ->whereNotIn('status', [
-                            OccurrenceStatus::Cancelled->value,
-                            OccurrenceStatus::Completed->value,
-                        ])
-                        ->each(fn (Occurrence $occ) => $occ->update(['status' => OccurrenceStatus::Cancelled]));
-                }
-            }
-
-            if (! $event->wasRecentlyCreated && ! $event->wasChanged(['taxonomy', 'media_references', 'metadata'])) {
-                return;
-            }
-
-            app(SynchronizeEventContent::class)->handle($event, 'model_saved');
-        });
-    }
 
     public function getTable(): string
     {
         return config('events.database.tables.events', 'events');
     }
 
-    /**
-     * @param  Builder<static>  $query
-     * @return Builder<static>
-     */
-    public function scopeForOwner(Builder $query, ?Model $owner = null, bool $includeGlobal = false): Builder
+    protected function casts(): array
     {
-        $ownerToScope = $owner;
-
-        if (func_num_args() < 2) {
-            $ownerToScope = OwnerContext::CURRENT;
-        }
-
-        $includeGlobalToScope = $includeGlobal;
-
-        if (func_num_args() < 3) {
-            $includeGlobalToScope = (bool) config('events.features.owner.include_global', false);
-        }
-
-        /** @var Builder<static> $scoped */
-        $scoped = $this->baseScopeForOwner($query, $ownerToScope, $includeGlobalToScope);
-
-        return $scoped;
+        return [
+            'status' => EventStatusState::class,
+            'pricing_mode' => PricingMode::class,
+            'registration_mode' => RegistrationMode::class,
+            'issue_passes_for_free' => 'boolean',
+            'published_at' => 'immutable_datetime',
+            'cancelled_at' => 'immutable_datetime',
+            'postponed_at' => 'immutable_datetime',
+            'archived_at' => 'immutable_datetime',
+            'completed_at' => 'immutable_datetime',
+            'last_state_change_at' => 'immutable_datetime',
+            'metadata' => 'array',
+        ];
     }
 
     /**
-     * @param  Builder<static>  $query
-     * @return Builder<static>
-     */
-    public function scopeApproved(Builder $query): Builder
-    {
-        return $query->where($this->qualifyColumn('moderation_status'), EventModerationStatus::Approved->value);
-    }
-
-    /**
-     * @param  Builder<static>  $query
-     * @return Builder<static>
-     */
-    public function scopeRootEvents(Builder $query): Builder
-    {
-        return $query->whereNull($this->qualifyColumn('parent_event_id'));
-    }
-
-    /**
-     * @param  Builder<static>  $query
-     * @return Builder<static>
-     */
-    public function scopeChildEvents(Builder $query): Builder
-    {
-        return $query->whereNotNull($this->qualifyColumn('parent_event_id'));
-    }
-
-    /**
-     * @param  Builder<static>  $query
-     * @return Builder<static>
-     */
-    public function scopeWithStructure(Builder $query, EventStructure | string $structure): Builder
-    {
-        $structureValue = $structure instanceof EventStructure ? $structure->value : $structure;
-
-        return $query->where($this->qualifyColumn('structure'), $structureValue);
-    }
-
-    /**
-     * @param  Builder<static>  $query
-     * @return Builder<static>
-     */
-    public function scopeStandalone(Builder $query): Builder
-    {
-        return $this->scopeRootEvents($this->scopeWithStructure($query, EventStructure::Standalone));
-    }
-
-    /**
-     * @param  Builder<static>  $query
-     * @return Builder<static>
-     */
-    public function scopePrograms(Builder $query): Builder
-    {
-        return $this->scopeRootEvents($this->scopeWithStructure($query, EventStructure::Program));
-    }
-
-    /**
-     * @param  Builder<static>  $query
-     * @return Builder<static>
-     */
-    public function scopeSessions(Builder $query): Builder
-    {
-        return $this->scopeChildEvents($this->scopeWithStructure($query, EventStructure::Session));
-    }
-
-    /**
-     * @param  Builder<static>  $query
-     * @return Builder<static>
-     */
-    public function scopePubliclyAccessible(Builder $query, ?Carbon $now = null): Builder
-    {
-        $now ??= now('UTC');
-
-        return $this->constrainPublicWindow(
-            $query
-                ->whereIn($this->qualifyColumn('status'), [
-                    EventStatus::Active->value,
-                    EventStatus::Postponed->value,
-                    EventStatus::Delayed->value,
-                    EventStatus::Cancelled->value,
-                    EventStatus::Archived->value,
-                ])
-                ->where($this->qualifyColumn('moderation_status'), EventModerationStatus::Approved->value)
-                ->whereIn($this->qualifyColumn('visibility'), [
-                    EventVisibility::Public->value,
-                    EventVisibility::Unlisted->value,
-                ]),
-            $now,
-        );
-    }
-
-    /**
-     * @param  Builder<static>  $query
-     * @return Builder<static>
-     */
-    public function scopePubliclyDiscoverable(Builder $query, ?Carbon $now = null): Builder
-    {
-        $now ??= now('UTC');
-
-        return $this->constrainPublicWindow(
-            $query
-                ->where($this->qualifyColumn('status'), EventStatus::Active->value)
-                ->where($this->qualifyColumn('moderation_status'), EventModerationStatus::Approved->value)
-                ->where($this->qualifyColumn('visibility'), EventVisibility::Public->value),
-            $now,
-        );
-    }
-
-    /**
-     * @param  Builder<static>  $query
-     * @return Builder<static>
-     */
-    public function scopeSearchable(Builder $query, ?Carbon $now = null): Builder
-    {
-        return $this->scopePubliclyDiscoverable($query, $now);
-    }
-
-    /**
-     * @param  Builder<static>  $query
-     * @return Builder<static>
-     */
-    public function scopeUpcoming(Builder $query, ?Carbon $now = null): Builder
-    {
-        $now ??= now('UTC');
-
-        return $query
-            ->where($this->qualifyColumn('status'), EventStatus::Active->value)
-            ->where(function (Builder $query) use ($now): void {
-                $query
-                    ->whereNull($this->qualifyColumn('public_starts_at'))
-                    ->orWhere($this->qualifyColumn('public_starts_at'), '>=', $now);
-            });
-    }
-
-    /**
-     * @param  Builder<static>  $query
-     * @return Builder<static>
-     */
-    public function scopeLive(Builder $query, ?Carbon $now = null): Builder
-    {
-        $now ??= now('UTC');
-
-        return $query
-            ->where($this->qualifyColumn('status'), EventStatus::Active->value)
-            ->where(function (Builder $query) use ($now): void {
-                $query
-                    ->where(function (Builder $query) use ($now): void {
-                        $query
-                            ->whereNull($this->qualifyColumn('public_starts_at'))
-                            ->orWhere($this->qualifyColumn('public_starts_at'), '<=', $now);
-                    })
-                    ->where(function (Builder $query) use ($now): void {
-                        $query
-                            ->whereNull($this->qualifyColumn('public_ends_at'))
-                            ->orWhere($this->qualifyColumn('public_ends_at'), '>=', $now);
-                    });
-            });
-    }
-
-    /**
-     * @param  Builder<static>  $query
-     * @return Builder<static>
-     */
-    public function scopeDelayed(Builder $query): Builder
-    {
-        return $query->where($this->qualifyColumn('status'), EventStatus::Delayed->value);
-    }
-
-    /**
-     * @return BelongsTo<EventSeries, $this>
-     */
-    public function series(): BelongsTo
-    {
-        return $this->belongsTo(EventSeries::class, 'event_series_id');
-    }
-
-    /**
-     * @return BelongsTo<Model, $this>
-     */
-    public function parentEvent(): BelongsTo
-    {
-        return $this->belongsTo(ConfiguredEventModel::classFor('events.models.event', self::class), 'parent_event_id');
-    }
-
-    /**
-     * @return MorphTo<Model, $this>
-     */
-    public function organizer(): MorphTo
-    {
-        return $this->morphTo();
-    }
-
-    /**
-     * @return MorphMany<EventPerson, $this>
-     */
-    public function people(): MorphMany
-    {
-        return $this->morphMany(EventPerson::class, 'assignable')
-            ->orderBy((new EventPerson)->qualifyColumn('order_column'))
-            ->orderBy((new EventPerson)->qualifyColumn('display_name'));
-    }
-
-    /**
-     * @return MorphMany<EventOrganizer, $this>
-     */
-    public function organizers(): MorphMany
-    {
-        return $this->morphMany(EventOrganizer::class, 'assignable')
-            ->orderBy((new EventOrganizer)->qualifyColumn('order_column'));
-    }
-
-    /**
-     * @return MorphMany<EventSpeaker, $this>
-     */
-    public function speakers(): MorphMany
-    {
-        return $this->morphMany(EventSpeaker::class, 'assignable')
-            ->orderBy((new EventSpeaker)->qualifyColumn('order_column'));
-    }
-
-    /**
-     * @return MorphMany<EventSponsor, $this>
-     */
-    public function sponsors(): MorphMany
-    {
-        return $this->morphMany(EventSponsor::class, 'assignable')
-            ->orderBy((new EventSponsor)->qualifyColumn('order_column'));
-    }
-
-    /**
-     * @return HasMany<Model, $this>
-     */
-    public function childEvents(): HasMany
-    {
-        return $this->hasMany(ConfiguredEventModel::classFor('events.models.event', self::class), 'parent_event_id')
-            ->orderBy($this->qualifyColumn('structure'))
-            ->orderBy($this->qualifyColumn('name'));
-    }
-
-    /**
-     * @return HasMany<Occurrence, $this>
+     * @return HasMany<EventOccurrence, $this>
      */
     public function occurrences(): HasMany
     {
-        return $this->hasMany(Occurrence::class, 'event_id');
+        return $this->hasMany(EventOccurrence::class);
     }
 
     /**
-     * @return MorphMany<EventClassification, $this>
+     * @return HasMany<EventSession, $this>
      */
-    public function classifications(): MorphMany
+    public function sessions(): HasMany
     {
-        return $this->morphMany(EventClassification::class, 'assignable');
+        return $this->hasMany(EventSession::class);
     }
 
     /**
-     * @return MorphMany<EventAsset, $this>
+     * @return HasMany<EventLocation, $this>
      */
-    public function assets(): MorphMany
+    public function locations(): HasMany
     {
-        return $this->morphMany(EventAsset::class, 'assignable');
+        return $this->hasMany(EventLocation::class);
     }
 
     /**
-     * @return MorphMany<EventReference, $this>
+     * @return HasMany<EventFacility, $this>
      */
-    public function references(): MorphMany
+    public function facilities(): HasMany
     {
-        return $this->morphMany(EventReference::class, 'assignable')
-            ->orderBy((new EventReference)->qualifyColumn('reference_kind'))
-            ->orderBy((new EventReference)->qualifyColumn('order_column'));
+        return $this->hasMany(EventFacility::class);
     }
 
     /**
-     * @return MorphMany<EventSubmission, $this>
+     * @return HasMany<EventInvolvement, $this>
      */
-    public function submissions(): MorphMany
+    public function involvements(): HasMany
     {
-        return $this->morphMany(EventSubmission::class, 'assignable');
+        return $this->hasMany(EventInvolvement::class);
     }
 
     /**
-     * @return HasMany<EventReview, $this>
+     * @return HasMany<EventAccessPolicy, $this>
      */
-    public function reviews(): HasMany
+    public function accessPolicies(): HasMany
     {
-        return $this->hasMany(EventReview::class, 'event_id');
+        return $this->hasMany(EventAccessPolicy::class);
     }
 
     /**
-     * @return MorphMany<EventChange, $this>
+     * @return HasMany<EventRegistration, $this>
      */
-    public function changeNotices(): MorphMany
+    public function registrations(): HasMany
     {
-        return $this->morphMany(EventChange::class, 'assignable');
+        /* @phpstan-ignore argument.templateType */
+        return $this->hasMany(static::registrationModelClass(), 'event_id');
+    }
+
+    /**
+     * @return MorphMany<TicketType, $this>
+     */
+    public function ticketTypes(): MorphMany
+    {
+        return $this->morphMany(TicketType::class, 'ticketable');
+    }
+
+    /**
+     * @return MorphMany<Pass, $this>
+     */
+    public function passes(): MorphMany
+    {
+        return $this->morphMany(Pass::class, 'ticketable');
     }
 
     /**
      * @return HasMany<EventAttendance, $this>
      */
-    public function attendanceRecords(): HasMany
+    public function attendances(): HasMany
     {
-        return $this->hasMany(EventAttendance::class, 'event_id');
+        return $this->hasMany(EventAttendance::class);
     }
 
     /**
-     * @return HasMany<EventEngagement, $this>
+     * @return HasMany<EventMaterial, $this>
      */
-    public function engagements(): HasMany
+    public function materials(): HasMany
     {
-        return $this->hasMany(EventEngagement::class, 'event_id');
+        return $this->hasMany(EventMaterial::class);
     }
 
     /**
-     * @return HasManyThrough<EventAgenda, Occurrence, $this>
+     * @return HasMany<EventReference, $this>
      */
-    public function agendaItems(): HasManyThrough
+    public function referenceRecords(): HasMany
     {
-        return $this->hasManyThrough(EventAgenda::class, Occurrence::class, 'event_id', 'occurrence_id')
-            ->orderBy((new EventAgenda)->qualifyColumn('order_column'))
-            ->orderBy((new EventAgenda)->qualifyColumn('starts_at'))
-            ->orderBy((new EventAgenda)->qualifyColumn('segment_key'));
-    }
-
-    public function product(): BelongsTo
-    {
-        return $this->belongsTo(
-            CommerceIntegration::requireModelClass('product_model', 'products'),
-            'product_id',
-        );
-    }
-
-    public function isPubliclyAccessible(?Carbon $now = null): bool
-    {
-        $now ??= now('UTC');
-
-        if (! $this->status->isPubliclyVisible()) {
-            return false;
-        }
-
-        if (! $this->moderation_status->isPubliclyVisible()) {
-            return false;
-        }
-
-        if (! $this->visibility->isPubliclyAccessible()) {
-            return false;
-        }
-
-        return $this->isInsidePublicWindow($now);
-    }
-
-    public function isPubliclyDiscoverable(?Carbon $now = null): bool
-    {
-        if ($this->status !== EventStatus::Active) {
-            return false;
-        }
-
-        if (! $this->moderation_status->isPubliclyVisible()) {
-            return false;
-        }
-
-        if (! $this->visibility->isDiscoverable()) {
-            return false;
-        }
-
-        return $this->isInsidePublicWindow($now ?? now('UTC'));
-    }
-
-    public function isEngageable(): bool
-    {
-        return $this->status->isEngageable();
-    }
-
-    public function isRoot(): bool
-    {
-        return $this->parent_event_id === null;
-    }
-
-    public function isChild(): bool
-    {
-        return $this->parent_event_id !== null;
-    }
-
-    public function isStandalone(): bool
-    {
-        return $this->structure->isStandalone();
-    }
-
-    public function isProgram(): bool
-    {
-        return $this->structure->isProgram();
-    }
-
-    public function isSession(): bool
-    {
-        return $this->structure->isSession();
-    }
-
-    public function displayTimezone(?Model $viewer = null): string
-    {
-        return app(EventDisplayTimezoneResolver::class)->resolve($this, $viewer);
+        return $this->hasMany(EventReference::class);
     }
 
     /**
-     * @return array<string, string>
+     * @return HasMany<EventLink, $this>
      */
-    public function mediaCollections(): array
+    public function links(): HasMany
     {
-        $collections = config('events.media.collections', []);
-
-        return is_array($collections)
-            ? array_filter($collections, static fn (mixed $value): bool => is_string($value) && mb_trim($value) !== '')
-            : [];
+        return $this->hasMany(EventLink::class);
     }
 
     /**
-     * @return array<int, mixed>|array<string, mixed>
+     * @return HasMany<EventMedia, $this>
      */
-    public function taxonomyTerms(?string $group = null): array
+    public function mediaRecords(): HasMany
     {
-        $classifications = $this->relationLoaded('classifications')
-            ? $this->classifications
-            : $this->classifications()->orderBy('group_key')->orderBy('order_column')->get();
-
-        if ($classifications->isNotEmpty()) {
-            $grouped = $classifications
-                ->sortBy('order_column')
-                ->groupBy('group_key')
-                ->map(static fn (Collection $items): array => $items->pluck('term_key')->values()->all())
-                ->all();
-
-            if ($group === null) {
-                return $grouped;
-            }
-
-            return $grouped[$group] ?? [];
-        }
-
-        $taxonomy = $this->taxonomy ?? [];
-
-        if ($group === null) {
-            return $taxonomy;
-        }
-
-        $terms = $taxonomy[$group] ?? [];
-
-        return is_array($terms) ? $terms : [];
+        return $this->hasMany(EventMedia::class);
     }
 
     /**
-     * @return array<int, mixed>|array<string, mixed>
+     * @return HasMany<EventLanguage, $this>
      */
-    public function assetReferences(?string $role = null): array
+    public function languages(): HasMany
     {
-        $assets = $this->relationLoaded('assets')
-            ? $this->assets
-            : $this->assets()->orderBy('role_key')->orderBy('order_column')->get();
-
-        if ($assets->isNotEmpty()) {
-            $grouped = $assets
-                ->sortBy('order_column')
-                ->groupBy('role_key')
-                ->map(static function (Collection $items): array | string {
-                    $payload = $items
-                        ->map(static fn (EventAsset $asset): string => $asset->url ?? $asset->provider_reference ?? $asset->title ?? '')
-                        ->filter(static fn (string $value): bool => $value !== '')
-                        ->values()
-                        ->all();
-
-                    if (count($payload) === 1) {
-                        return $payload[0];
-                    }
-
-                    return $payload;
-                })
-                ->all();
-
-            if ($role === null) {
-                return $grouped;
-            }
-
-            $rolePayload = $grouped[$role] ?? [];
-
-            return is_array($rolePayload) ? $rolePayload : [$rolePayload];
-        }
-
-        $mediaReferences = $this->media_references ?? [];
-
-        if ($role === null) {
-            return $mediaReferences;
-        }
-
-        $reference = $mediaReferences[$role] ?? [];
-
-        return is_array($reference) ? $reference : [$reference];
+        return $this->hasMany(EventLanguage::class);
     }
 
     /**
-     * @return array<int, mixed>|array<string, mixed>
+     * @return HasMany<EventAudience, $this>
      */
-    public function referenceMaterials(?string $kind = null): array
+    public function audiences(): HasMany
     {
-        $references = $this->relationLoaded('references')
-            ? $this->references
-            : $this->references()->orderBy('reference_kind')->orderBy('order_column')->get();
-
-        if ($references->isEmpty()) {
-            return $kind === null ? [] : [];
-        }
-
-        $grouped = $references
-            ->groupBy('reference_kind')
-            ->map(static function (Collection $items): array {
-                return $items
-                    ->sortBy('order_column')
-                    ->map(static fn (EventReference $reference): array => [
-                        'reference_kind' => $reference->reference_kind,
-                        'reference_type' => $reference->reference_type,
-                        'reference_id' => $reference->reference_id,
-                        'display_label' => $reference->display_label,
-                        'source_label' => $reference->source_label,
-                        'url' => $reference->url,
-                        'order_column' => $reference->order_column,
-                        'metadata' => $reference->metadata,
-                    ])
-                    ->values()
-                    ->all();
-            })
-            ->all();
-
-        if ($kind === null) {
-            return $grouped;
-        }
-
-        return $grouped[$kind] ?? [];
+        return $this->hasMany(EventAudience::class);
     }
 
     /**
-     * @return array<string, mixed>
+     * @return HasMany<EventAudienceProfile, $this>
      */
-    public function toSearchableArray(): array
+    public function audienceProfiles(): HasMany
     {
-        $this->loadMissing(['classifications', 'assets', 'references', 'people']);
+        return $this->hasMany(EventAudienceProfile::class);
+    }
 
-        return app(EventSearchPayloadResolver::class)->toSearchableArray($this);
+    /**
+     * @return HasMany<EventEligibilityRule, $this>
+     */
+    public function eligibilityRules(): HasMany
+    {
+        return $this->hasMany(EventEligibilityRule::class);
+    }
+
+    /**
+     * @return HasMany<EventClassification, $this>
+     */
+    public function classifications(): HasMany
+    {
+        return $this->hasMany(EventClassification::class);
+    }
+
+    /**
+     * @return HasMany<EventTimeExpression, $this>
+     */
+    public function timeExpressions(): HasMany
+    {
+        return $this->hasMany(EventTimeExpression::class);
+    }
+
+    /**
+     * @return HasMany<EventItinerary, $this>
+     */
+    public function itineraries(): HasMany
+    {
+        return $this->hasMany(EventItinerary::class);
+    }
+
+    /**
+     * @return HasMany<EventChangeLog, $this>
+     */
+    public function changeLogs(): HasMany
+    {
+        return $this->hasMany(EventChangeLog::class);
+    }
+
+    /**
+     * @return HasMany<EventUpdate, $this>
+     */
+    public function updates(): HasMany
+    {
+        return $this->hasMany(EventUpdate::class);
+    }
+
+    /**
+     * @return HasMany<EventNotificationBatch, $this>
+     */
+    public function notificationBatches(): HasMany
+    {
+        return $this->hasMany(EventNotificationBatch::class);
+    }
+
+    /**
+     * @return MorphMany<SeatMap, $this>
+     */
+    public function seatMaps(): MorphMany
+    {
+        return $this->morphMany(SeatMap::class, 'seatable');
+    }
+
+    /**
+     * @return MorphTo<Model, $this>
+     */
+    public function createdBy(): MorphTo
+    {
+        return $this->morphTo();
     }
 
     /**
      * @param  Builder<static>  $query
      * @return Builder<static>
      */
-    private function constrainPublicWindow(Builder $query, Carbon $now): Builder
+    public function scopePublished(Builder $query): Builder
     {
-        return $query
-            ->where(function (Builder $query) use ($now): void {
-                $query
-                    ->whereNull($this->qualifyColumn('published_at'))
-                    ->orWhere($this->qualifyColumn('published_at'), '<=', $now);
-            })
-            ->where(function (Builder $query) use ($now): void {
-                $query
-                    ->whereNull($this->qualifyColumn('public_starts_at'))
-                    ->orWhere($this->qualifyColumn('public_starts_at'), '<=', $now);
-            })
-            ->where(function (Builder $query) use ($now): void {
-                $query
-                    ->whereNull($this->qualifyColumn('public_ends_at'))
-                    ->orWhere($this->qualifyColumn('public_ends_at'), '>=', $now);
-            });
+        return $query->where('status', self::PUBLISHED);
     }
 
-    private function isInsidePublicWindow(Carbon $now): bool
+    /**
+     * @param  Builder<static>  $query
+     * @return Builder<static>
+     */
+    public function scopePublic(Builder $query): Builder
     {
-        if ($this->published_at !== null && $this->published_at->gt($now)) {
-            return false;
+        return $query->where('visibility', self::PUBLIC);
+    }
+
+    /**
+     * @param  Builder<static>  $query
+     * @return Builder<static>
+     */
+    public function scopeFree(Builder $query): Builder
+    {
+        return $query->where('pricing_mode', PricingMode::Free->value);
+    }
+
+    /**
+     * @param  Builder<static>  $query
+     * @return Builder<static>
+     */
+    public function scopeMixed(Builder $query): Builder
+    {
+        return $query->where('pricing_mode', PricingMode::Mixed->value);
+    }
+
+    /**
+     * @param  Builder<static>  $query
+     * @return Builder<static>
+     */
+    public function scopeOpenDoor(Builder $query): Builder
+    {
+        return $query->where('registration_mode', RegistrationMode::None->value);
+    }
+
+    /**
+     * @param  Builder<static>  $query
+     * @return Builder<static>
+     */
+    public function scopeWithResolvedModes(Builder $query): Builder
+    {
+        return $query->with(['ticketTypes:id,ticketable_id,ticketable_type,price']);
+    }
+
+    protected static function newFactory(): EventFactory
+    {
+        return EventFactory::new();
+    }
+
+    protected static function registrationModelClass(): string
+    {
+        return EventRegistration::class;
+    }
+
+    public function isPubliclyVisible(): bool
+    {
+        return $this->visibility === self::PUBLIC && $this->status instanceof Published;
+    }
+
+    public function effectivePricingMode(): PricingMode
+    {
+        if ($this->pricing_mode !== null) {
+            return $this->pricing_mode instanceof PricingMode
+                ? $this->pricing_mode
+                : PricingMode::from($this->pricing_mode);
         }
 
-        if ($this->public_starts_at !== null && $this->public_starts_at->gt($now)) {
-            return false;
+        if (! config('events.features.free_only.auto_derive_pricing_from_ticket_types', true)) {
+            return PricingMode::Paid;
         }
 
-        if ($this->public_ends_at !== null && $this->public_ends_at->lt($now)) {
-            return false;
+        /** @var Collection<int, TicketType> $ticketTypes */
+        $ticketTypes = $this->relationLoaded('ticketTypes')
+            ? $this->getRelation('ticketTypes')
+            : $this->ticketTypes()->get(['id', 'ticketable_id', 'ticketable_type', 'price']);
+
+        if ($ticketTypes->isEmpty()) {
+            return PricingMode::Free;
         }
 
-        return true;
+        $hasPaid = $ticketTypes->contains(fn ($t): bool => (float) $t->price > 0);
+        $hasFree = $ticketTypes->contains(fn ($t): bool => (float) $t->price === 0.0);
+
+        return match (true) {
+            $hasPaid && $hasFree => PricingMode::Mixed,
+            $hasPaid => PricingMode::Paid,
+            default => PricingMode::Free,
+        };
+    }
+
+    public function effectiveRegistrationMode(): RegistrationMode
+    {
+        if ($this->registration_mode !== null) {
+            return $this->registration_mode instanceof RegistrationMode
+                ? $this->registration_mode
+                : RegistrationMode::from($this->registration_mode);
+        }
+
+        $default = config('events.features.free_only.default_registration_mode', 'required');
+
+        return RegistrationMode::from($default);
+    }
+
+    public function isFree(): bool
+    {
+        return $this->effectivePricingMode()->isFreeOnly();
+    }
+
+    public function requiresRegistration(): bool
+    {
+        return $this->effectiveRegistrationMode()->isRequired();
+    }
+
+    public function isOpenDoor(): bool
+    {
+        return $this->effectiveRegistrationMode()->isOpenDoor();
+    }
+
+    public function shouldIssuePassesForFree(): bool
+    {
+        $default = (bool) config('events.features.free_only.auto_issue_passes_for_free', true);
+
+        return $this->issue_passes_for_free !== null
+            ? (bool) $this->issue_passes_for_free
+            : $default;
+    }
+
+    public function shareTitle(): string
+    {
+        return $this->title;
+    }
+
+    public function shareUrl(): string
+    {
+        return URL::route(config('events.shares.route_name', 'events.show'), [$this->slug], true);
+    }
+
+    public function shareDescription(): ?string
+    {
+        return $this->summary;
+    }
+
+    public function shareImage(): ?string
+    {
+        $media = $this->mediaRecords->first();
+
+        return $media?->url;
+    }
+
+    /**
+     * Read a display-oriented key from this Event.
+     *
+     * Maps config-style dotted paths to model columns or metadata:
+     *   series.name / event.name        → $this->title
+     *   event.summary                   → $this->summary
+     *   event.description               → $this->description
+     *   event.default_timezone          → $this->timezone
+     *   event.time_label                → $this->metadata['time_label']
+     *   venue.short_name                → $this->metadata['venue']['short_name']
+     *   occurrences                     → $this->metadata['occurrences']
+     */
+    public function metadata(string $key, mixed $default = null): mixed
+    {
+        return match (true) {
+            $key === 'series.name', $key === 'event.name' => $this->title,
+            $key === 'series.slug', $key === 'event.slug' => $this->slug,
+            $key === 'event.summary', $key === 'series.description' => $this->summary ?? $default,
+            $key === 'event.description' => $this->description ?? $default,
+            $key === 'event.default_timezone' => $this->timezone ?? $default,
+            str_starts_with($key, 'event.') => Arr::get($this->metadata ?? [], mb_substr($key, 6), $default),
+            default => Arr::get($this->metadata ?? [], $key, $default),
+        };
+    }
+
+    /**
+     * Static shortcut for metadata() on the first event.
+     */
+    public static function metadataValue(string $key, mixed $default = null, ?string $slug = null): mixed
+    {
+        $query = self::query();
+
+        if ($slug !== null) {
+            $query->where('slug', $slug);
+        }
+
+        $event = $query->first();
+
+        return $event?->metadata($key, $default) ?? $default;
+    }
+
+    /**
+     * First occurrence date label, read from metadata.
+     */
+    public static function occurrenceLabel(string $preferredDate, ?string $slug = null): ?string
+    {
+        $data = self::metadataValue("occurrences.{$preferredDate}", null, $slug);
+
+        return is_array($data) && isset($data['label']) && is_string($data['label'])
+            ? $data['label']
+            : null;
+    }
+
+    /**
+     * First occurrence start time, read from metadata.
+     */
+    public static function occurrenceStartsAt(string $preferredDate, ?string $slug = null): ?string
+    {
+        $data = self::metadataValue("occurrences.{$preferredDate}", null, $slug);
+
+        return is_array($data) && isset($data['starts_at']) && is_string($data['starts_at'])
+            ? $data['starts_at']
+            : null;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public static function preferredDates(?string $slug = null): array
+    {
+        $occurrences = self::metadataValue('occurrences', [], $slug);
+
+        if (! is_array($occurrences)) {
+            return [];
+        }
+
+        return array_values(array_filter(
+            array_keys($occurrences),
+            static fn (mixed $date): bool => is_string($date) && $date !== '',
+        ));
+    }
+
+    public function registerMediaCollections(): void
+    {
+        $this->addMediaCollection('cover')
+            ->useDisk(config('media-library.disk_name'))
+            ->acceptsMimeTypes(['image/jpeg', 'image/png', 'image/webp'])
+            ->withResponsiveImages()
+            ->singleFile();
+
+        $this->addMediaCollection('poster')
+            ->useDisk(config('media-library.disk_name'))
+            ->acceptsMimeTypes(['image/jpeg', 'image/png', 'image/webp'])
+            ->withResponsiveImages()
+            ->singleFile();
+
+        $this->addMediaCollection('gallery')
+            ->useDisk(config('media-library.disk_name'))
+            ->acceptsMimeTypes(['image/jpeg', 'image/png', 'image/webp'])
+            ->withResponsiveImages();
     }
 }
