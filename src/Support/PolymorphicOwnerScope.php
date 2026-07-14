@@ -6,7 +6,6 @@ namespace AIArmada\Events\Support;
 
 use AIArmada\CommerceSupport\Support\OwnerContext;
 use AIArmada\CommerceSupport\Support\OwnerScope;
-use AIArmada\Events\Models\Event;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -66,14 +65,15 @@ final class PolymorphicOwnerScope implements Scope
         );
 
         if ($this->eventIdColumn !== null) {
-            $event = new Event;
+            $eventClass = ModelResolver::eventClass();
+            $event = new $eventClass;
 
-            $builder->where(function (Builder $eventQuery) use ($model, $event): void {
+            $builder->where(function (Builder $eventQuery) use ($model, $event, $eventClass): void {
                 $eventQuery
                     ->whereNull($model->qualifyColumn($this->eventIdColumn))
                     ->orWhereIn(
                         $model->qualifyColumn($this->eventIdColumn),
-                        Event::query()->select(
+                        $eventClass::query()->select(
                             $event->qualifyColumn($event->getKeyName()),
                         ),
                     );

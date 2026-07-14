@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace AIArmada\Events\Support;
 
 use AIArmada\CommerceSupport\Support\OwnerContext;
-use AIArmada\Events\Models\Event;
 use AIArmada\Events\Models\EventAccessPolicy;
 use AIArmada\Events\Models\EventAttendance;
 use AIArmada\Events\Models\EventAttendanceLog;
@@ -69,11 +68,12 @@ final class EventOwnerScope implements Scope
         }
 
         if ($this->eventRelation === 'event') {
-            $event = new Event;
+            $eventClass = ModelResolver::eventClass();
+            $event = new $eventClass;
 
             $builder->whereIn(
                 $model->qualifyColumn('event_id'),
-                Event::query()->select($event->qualifyColumn($event->getKeyName())),
+                $eventClass::query()->select($event->qualifyColumn($event->getKeyName())),
             );
 
             return;

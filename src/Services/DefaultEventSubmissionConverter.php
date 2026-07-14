@@ -9,6 +9,7 @@ use AIArmada\Events\Contracts\EventSubmissionConverter;
 use AIArmada\Events\Models\Event;
 use AIArmada\Events\Models\EventSubmission;
 use AIArmada\Events\States\EventModerationStatus\Converted;
+use AIArmada\Events\Support\ModelResolver;
 use AIArmada\Events\Support\Normalization\EventContentNormalizer;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
@@ -42,7 +43,8 @@ final class DefaultEventSubmissionConverter implements EventSubmissionConverter
         );
 
         $event = OwnerContext::withOwner($owner, function () use ($data, $eventDescription, $eventSummary, $eventTitle): Event {
-            $event = Event::query()->create([
+            $eventClass = ModelResolver::eventClass();
+            $event = $eventClass::query()->create([
                 'title' => $eventTitle,
                 'summary' => $eventSummary,
                 'description' => $eventDescription,
