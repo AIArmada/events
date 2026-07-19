@@ -70,11 +70,12 @@ use AIArmada\Events\Models\EventManagementAssignment;
 use AIArmada\Events\Models\EventManagementAssignmentRequest;
 use AIArmada\Events\Models\EventModerationAction;
 use AIArmada\Events\Models\EventOccurrence;
-use AIArmada\Events\Models\EventRegistration;
 use AIArmada\Events\Models\EventRecurrenceRule;
+use AIArmada\Events\Models\EventRegistration;
 use AIArmada\Events\Models\EventReport;
 use AIArmada\Events\Models\EventRevision;
 use AIArmada\Events\Models\EventSession;
+use AIArmada\Events\Models\EventSubmission;
 use AIArmada\Events\Models\EventVerification;
 use AIArmada\Events\Notifications\EventWelcomeNotification;
 use AIArmada\Events\Observers\EventAttributeObserver;
@@ -294,6 +295,7 @@ final class EventsServiceProvider extends PackageServiceProvider
     {
         Relation::morphMap([
             'event_registration' => EventRegistration::class,
+            'event_submission' => EventSubmission::class,
         ]);
     }
 
