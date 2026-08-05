@@ -261,6 +261,14 @@ $venue = Venue::create([
 > [!info]
 > Set `events.integrations.addressing_enabled=true` to read venue and event location addresses from the shared addressing package. When the flag is off, the package continues to use the flat address columns.
 
+### Venue spaces
+
+VenueSpace supports both reusable catalog spaces (venue_id = null) and
+venue-owned spaces (venue_id set). Slugs are unique within their ownership
+scope: catalog slugs are globally unique, while venue-owned slugs are unique
+per venue. Event locations store an optional space_name_snapshot so consumers
+can preserve the selected name when the live space is renamed.
+
 ## Managing Registrations
 
 ### Basic registration
@@ -397,7 +405,7 @@ app(EventCheckInService::class)->checkIn([
 
 ## Managing Involvements
 
-Involvements link people (any model) to an event, occurrence, or session with a role. The `involveable` is polymorphic — it can be a `User`, `Organization`, `Speaker`, or any model implementing `CanBeInvolvedInEvents`.
+Involvements link people (any model) to an event, occurrence, or session with a role. The `involveable` is polymorphic — it can be a `User`, `EventOrganizer`, `Speaker`, or any model implementing `CanBeInvolvedInEvents`.
 
 ### Creating involvements
 
