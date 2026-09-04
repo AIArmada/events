@@ -4,34 +4,36 @@ declare(strict_types=1);
 
 namespace AIArmada\Events\Actions;
 
-use AIArmada\Events\Events\EventSessionUpdated;
-use AIArmada\Events\Models\EventSession;
+use AIArmada\Events\Events\EventOccurrenceUpdated;
+use AIArmada\Events\Models\EventOccurrence;
 use AIArmada\Events\Support\EventWriteGuard;
 use AIArmada\Events\Support\Normalization\EventContentNormalizer;
 use Carbon\CarbonImmutable;
 use InvalidArgumentException;
 
-final class UpdateEventSessionAction
+final class UpdateEventOccurrenceAction
 {
     public function __construct(
         private readonly EventContentNormalizer $contentNormalizer,
     ) {}
 
     /**
+     * Update mutable occurrence content and schedule fields while protecting
+     * the event relationship and lifecycle timestamps.
+     *
      * @param  array<string, mixed>  $attributes
-     * @return array{changes: array<string, array{old: mixed, new: mixed}>, session: EventSession}
+     * @return array{changes: array<string, array{old: mixed, new: mixed}>, occurrence: EventOccurrence}
      */
-    public function handle(EventSession $session, array $attributes): array
+    public function handle(EventOccurrence $occurrence, array $attributes): array
     {
-        EventWriteGuard::findOrFail($session->event_id);
+        EventWriteGuard::findOrFail($occurrence->event_id);
 
-        $original = $session->getRawOriginal();
+        $original = $occurrence->getRawOriginal();
 
-        $fillable = $session->getFillable();
+        $fillable = $occurrence->getFillable();
         $allowed = array_intersect_key($attributes, array_flip($fillable));
         unset(
             $allowed['event_id'],
-            $allowed['event_occurrence_id'],
             $allowed['published_at'],
             $allowed['delayed_at'],
             $allowed['postponed_at'],
@@ -39,22 +41,27 @@ final class UpdateEventSessionAction
             $allowed['cancelled_at'],
             $allowed['completed_at'],
             $allowed['archived_at'],
+            $allowed['rescheduled_from_occurrence_id'],
+            $allowed['rescheduled_to_occurrence_id'],
         );
 
         if (array_key_exists('title', $allowed) && blank($allowed['title'])) {
-            throw new InvalidArgumentException('Session title is required.');
+            throw new InvalidArgumentException('Occurrence title is required.');
         }
 
         if (array_key_exists('title', $allowed)) {
             $allowed['title'] = $this->contentNormalizer->normalizeTitle((string) $allowed['title']);
         }
 
-        if (array_key_exists('summary', $allowed)) {
-            $allowed['summary'] = $this->contentNormalizer->normalizeSummary($allowed['summary'] !== null ? (string) $allowed['summary'] : null);
-        }
+        $startsAt = array_key_exists('starts_at', $allowed)
+            ? CarbonImmutable::parse((string) $allowed['starts_at'])
+            : $occurrence->starts_at;
+        $endsAt = array_key_exists('ends_at', $allowed)
+            ? CarbonImmutable::parse((string) $allowed['ends_at'])
+            : $occurrence->ends_at;
 
-        if (array_key_exists('description', $allowed)) {
-            $allowed['description'] = $this->contentNormalizer->normalizeDescription($allowed['description'] !== null ? (string) $allowed['description'] : null);
+        if ($endsAt instanceof CarbonImmutable && $startsAt instanceof CarbonImmutable && $endsAt->lessThanOrEqualTo($startsAt)) {
+            throw new InvalidArgumentException('Occurrence end time must be after the start time.');
         }
 
         if (array_key_exists('status', $allowed)) {
@@ -74,11 +81,12 @@ final class UpdateEventSessionAction
             }
         }
 
-        $session->update($allowed);
+        $occurrence->update($allowed);
 
-        $current = $session->getAttributes();
+        $current = $occurrence->getAttributes();
 
         $changes = [];
+
         foreach ($allowed as $key => $newValue) {
             $oldValue = $original[$key] ?? null;
             $normalizedNewValue = $current[$key] ?? null;
@@ -89,11 +97,11 @@ final class UpdateEventSessionAction
         }
 
         if ($changes !== []) {
-            event(new EventSessionUpdated($session, $changes));
+            event(new EventOccurrenceUpdated($occurrence, $changes));
         }
 
         if (isset($changes['status'])) {
-            $changeType = match ($session->status->getValue()) {
+            $changeType = match ($occurrence->status->getValue()) {
                 'published' => 'published',
                 'delayed' => 'delayed',
                 'cancelled' => 'cancelled',
@@ -106,20 +114,19 @@ final class UpdateEventSessionAction
 
             if ($changeType !== null) {
                 DispatchEventChangeChainAction::run(
-                    eventId: $session->event_id,
+                    eventId: $occurrence->event_id,
                     changeType: $changeType,
-                    reason: $session->status_reason,
-                    sessionId: $session->id,
-                    occurrenceId: $session->event_occurrence_id,
+                    reason: $occurrence->status_reason,
+                    occurrenceId: $occurrence->id,
                     oldValue: ['status' => $original['status'] ?? null],
-                    newValue: ['status' => $session->status->getValue()],
+                    newValue: ['status' => $occurrence->status->getValue()],
                 );
             }
         }
 
         return [
             'changes' => $changes,
-            'session' => $session->fresh(),
+            'occurrence' => $occurrence->fresh(),
         ];
     }
 }
