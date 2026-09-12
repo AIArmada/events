@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace AIArmada\Events\Models;
 
+use AIArmada\Addressing\Traits\HasAddresses;
 use AIArmada\Contacting\Concerns\HasContactMethods;
 use AIArmada\Contacting\Concerns\HasSocialProfiles;
 use AIArmada\Contacting\Models\ContactMethod;
 use AIArmada\Events\Database\Factories\VenueFactory;
-use AIArmada\Events\Models\Concerns\Addressable;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
@@ -62,7 +62,7 @@ use Spatie\MediaLibrary\InteractsWithMedia;
  */
 class Venue extends Model implements HasMedia
 {
-    use Addressable;
+    use HasAddresses;
     use HasContactMethods;
     use HasFactory;
     use HasSocialProfiles;
@@ -72,12 +72,6 @@ class Venue extends Model implements HasMedia
     protected $fillable = [
         'parent_venue_id',
         'name', 'slug', 'venue_type',
-        'line1', 'line2',
-        'city', 'state', 'postcode', 'country_code', 'country',
-        'latitude', 'longitude',
-        'google_place_id', 'google_maps_url', 'waze_url', 'map_url',
-        'directions',
-        'geocoded_at', 'geocoding_source',
         'status', 'visibility',
         'metadata',
     ];
