@@ -12,13 +12,13 @@ return new class extends Migration
     {
         $jsonType = commerce_json_column_type('events', 'jsonb');
 
-        Schema::create(config('events.database.tables.event_roles', 'event_roles'), function (Blueprint $table) use ($jsonType): void {
+        Schema::create(config('events.database.tables.event_series_rules', 'event_series_rules'), function (Blueprint $table) use ($jsonType): void {
             $table->uuid('id')->primary();
-            $table->string('code')->unique();
-            $table->string('name');
-            $table->text('description')->nullable();
-            $table->integer('sort_order')->default(0)->index();
-            $table->boolean('is_active')->default(true)->index();
+            $table->uuid('event_series_id')->index();
+            $table->string('rule_type')->index();
+            $table->string('operator')->index();
+            $table->string('value')->nullable();
+            $table->{$jsonType}('value_json')->nullable();
             $table->{$jsonType}('metadata')->nullable();
             $table->timestampsTz();
         });

@@ -12,17 +12,19 @@ return new class extends Migration
     {
         $jsonType = commerce_json_column_type('events', 'jsonb');
 
-        Schema::create(config('events.database.tables.event_registration_answers', 'event_registration_answers'), function (Blueprint $table) use ($jsonType): void {
+        Schema::create(config('events.database.tables.event_management_assignments', 'event_management_assignments'), function (Blueprint $table) use ($jsonType): void {
             $table->uuid('id')->primary();
             $table->uuid('event_id')->nullable()->index();
             $table->uuid('event_occurrence_id')->nullable()->index();
             $table->uuid('event_session_id')->nullable()->index();
-            $table->uuid('event_registration_id')->index();
-            $table->uuid('event_registration_participant_id')->nullable()->index();
-            $table->string('field_key')->index();
-            $table->string('question');
-            $table->text('answer')->nullable();
-            $table->{$jsonType}('answer_json')->nullable();
+            $table->string('manageable_type')->index();
+            $table->uuid('manageable_id')->index();
+            $table->string('manager_type')->index();
+            $table->uuid('manager_id')->index();
+            $table->string('assigned_by_type')->nullable()->index();
+            $table->uuid('assigned_by_id')->nullable()->index();
+            $table->string('role')->index();
+            $table->{$jsonType}('permissions')->nullable();
             $table->{$jsonType}('metadata')->nullable();
             $table->timestampsTz();
         });

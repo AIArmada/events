@@ -12,22 +12,21 @@ return new class extends Migration
     {
         $jsonType = commerce_json_column_type('events', 'jsonb');
 
-        Schema::create(config('events.database.tables.event_facilities', 'event_facilities'), function (Blueprint $table) use ($jsonType): void {
+        Schema::create(config('events.database.tables.event_itinerary_items', 'event_itinerary_items'), function (Blueprint $table) use ($jsonType): void {
             $table->uuid('id')->primary();
-            $table->uuid('event_id')->index();
+            $table->uuid('event_id')->nullable()->index();
             $table->uuid('event_occurrence_id')->nullable()->index();
+            $table->uuid('event_itinerary_id')->index();
+            $table->string('item_type')->index();
             $table->uuid('event_session_id')->nullable()->index();
-            $table->uuid('facility_type_id')->index();
+            $table->string('title')->nullable();
+            $table->text('description')->nullable();
+            $table->timestampTz('starts_at')->nullable();
+            $table->timestampTz('ends_at')->nullable();
+            $table->uuid('venue_id')->nullable()->index();
             $table->uuid('event_location_id')->nullable()->index();
-            $table->string('availability')->index();
-            $table->integer('quantity')->nullable();
-            $table->integer('capacity')->nullable();
-            $table->boolean('is_free')->nullable();
-            $table->bigInteger('fee_amount')->nullable();
-            $table->string('currency')->nullable();
             $table->string('location_label')->nullable();
-            $table->text('notes')->nullable();
-            $table->string('visibility')->index();
+            $table->integer('sort_order')->default(0)->index();
             $table->{$jsonType}('metadata')->nullable();
             $table->timestampsTz();
         });

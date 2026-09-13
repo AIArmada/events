@@ -12,15 +12,16 @@ return new class extends Migration
     {
         $jsonType = commerce_json_column_type('events', 'jsonb');
 
-        Schema::create(config('events.database.tables.venues', 'venues'), function (Blueprint $table) use ($jsonType): void {
+        Schema::create(config('events.database.tables.event_itineraries', 'event_itineraries'), function (Blueprint $table) use ($jsonType): void {
             $table->uuid('id')->primary();
-            $table->uuid('parent_venue_id')->nullable()->index();
+            $table->uuid('event_id')->index();
+            $table->uuid('event_occurrence_id')->nullable()->index();
+            $table->string('owner_type')->nullable()->index();
+            $table->uuid('owner_id')->nullable()->index();
             $table->string('name');
-            $table->string('slug')->nullable();
-            $table->text('description')->nullable();
-            $table->string('venue_type')->nullable()->index();
-            $table->string('status')->index();
+            $table->string('itinerary_type')->index();
             $table->string('visibility')->index();
+            $table->string('status')->index();
             $table->{$jsonType}('metadata')->nullable();
             $table->timestampsTz();
         });
