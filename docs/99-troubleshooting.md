@@ -35,7 +35,19 @@ Ensure your owner model implements the required `OwnerResolverInterface` contrac
 
 Verify the registration has associated `registration_items` with valid `ticket_type_id` references. Passes are created through explicit action, not automatically on registration creation.
 
-### Registration refuses creation
+#### Change notices are published but nobody is notified
+
+`publishNotice()` only records the change and dispatches `EventChangeNoticePublished`. Delivery
+runs in `DispatchEventChangeNoticeNotifications`. Check that:
+
+- an `EventChangeNoticeNotificationDispatcher` is bound (the built-in
+  `EventNotificationDispatcher` requires `aiarmada/communications`)
+- `events.change_notices.audience_resolver` resolves recipients for the audience scope the
+  change log resolved to (`registrants` for `critical`/`high` impact, `followers` otherwise)
+- a matching `EventUpdate` record exists on the change log — without one the dispatcher has
+  no followers or notification content to work from
+
+## Registration refuses creation
 
 Check:
 

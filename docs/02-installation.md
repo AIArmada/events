@@ -35,7 +35,7 @@ php artisan vendor:publish --provider="AIArmada\Events\EventsServiceProvider" --
 | `EVENTS_TABLE_EVENTS` | `{prefix}events` | Custom events table name |
 | `EVENTS_TABLE_OCCURRENCES` | `{prefix}event_occurrences` | Custom occurrences table name |
 | `EVENTS_TABLE_SESSIONS` | `{prefix}event_sessions` | Custom sessions table name |
-| `EVENTS_TABLE_PARTICIPANTS` | `{prefix}event_registration_participants` | Custom participants table name |
+| `EVENTS_TABLE_REGISTRATION_PARTICIPANTS` | `{prefix}event_registration_participants` | Custom participants table name |
 
 ## Verify installation
 
