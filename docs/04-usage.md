@@ -29,16 +29,11 @@ This provider is used by search adapters for eager loading only. It does not own
 ```php
 $event = Event::create([
     'title' => 'Free Workshop',
-    'status' => 'draft',        // NOT NULL
-    'visibility' => 'public',   // NOT NULL
     'pricing_mode' => PricingMode::Free,
     'registration_mode' => RegistrationMode::Required,
     'issue_passes_for_free' => true,
 ]);
 ```
-
-`status` and `visibility` are `NOT NULL` with no database default, so every `Event::create()`
-call must set both.
 
 ### Primary classifications
 
@@ -127,8 +122,6 @@ Sessions and occurrences can override the parent's mode:
 ```php
 $session = $occurrence->sessions()->create([
     'title' => 'Premium Workshop',
-    'status' => 'scheduled',     // NOT NULL
-    'visibility' => 'public',    // NOT NULL
     'pricing_mode' => PricingMode::Paid,     // Override free event
     'registration_mode' => RegistrationMode::Required,
     'capacity' => 50,
@@ -402,18 +395,13 @@ $ticketType = app(EnsureTicketTypeAction::class)->handle($occurrence, [
     'access_type' => 'entry',
     'price' => 50000,
     'currency' => 'MYR',
-    'max_quantity' => 10, // per-purchase cap
+    'max_quantity' => 5,
     'status' => 'active',
     'visibility' => 'public',
     'sales_starts_at' => now()->subMonth(),
     'sales_ends_at' => $occurrence->starts_at,
 ]);
 ```
-
-`EnsureTicketTypeAction` whitelists attributes explicitly, and `ticket_types` has no `quota`
-or `capacity` column — anything outside that whitelist is silently dropped. Per-scope
-capacity lives on the occurrence/session, and remaining-quota checks count
-`EventRegistrationItem` quantity across capacity-blocking statuses.
 
 ## Check-in and Attendance
 
@@ -496,10 +484,11 @@ Any model attached as an organizer involvement can implement `CanOrganizeEvents`
 
 ```php
 use AIArmada\Events\Contracts\CanOrganizeEvents;
+use AIArmada\Events\Traits\CanOrganizeEvents as OrganizesEvents;
 
 class User extends Model implements CanOrganizeEvents
 {
-    use CanOrganizeEvents; // provides sensible defaults
+    use OrganizesEvents; // provides sensible defaults
 
     public function eventOrganizerName(): string
     {
@@ -563,10 +552,6 @@ Pass revocation (cancel/refund/void/expire) automatically releases the associate
 | `events.features.auto_allocate_seats` | `true` | Allocate seats on pass issuance |
 | `events.features.auto_revoke_passes_on_cancel` | `true` | Revoke passes when registration is cancelled |
 
-## Stale slug redirects
-
-When a model's slug changes, the old slug automatically issues a 308 redirect to the new URL via spatie/laravel-sluggable's self-healing URLs.
-
 ## Selling Tickets via Commerce Checkout
 
 When `aiarmada/cart`, `aiarmada/checkout`, and `aiarmada/orders` are installed, ticket types can be sold through the standard commerce checkout pipeline alongside products.
@@ -590,7 +575,7 @@ AddEventTicketTypeToCartAction::make()->handle(
 );
 ```
 
-The action validates status, sales windows, min/max quantity, and remaining quota before adding. It handles cart merging — if the same ticket type is already in the cart, quantities and participants are merged rather than overwritten. Session-scoped ticket types preserve `event_session_id` in the cart item attributes.
+The action validates status, visibility, sales windows, min/max quantity, and inventory (when configured) before adding. It handles cart merging — if the same ticket type is already in the cart, quantities and participants are merged rather than overwritten. Session-scoped ticket types preserve `event_session_id` in the cart item attributes.
 
 ### Mixed carts (tickets + products)
 
@@ -607,7 +592,7 @@ One participant entry produces one registration with one ticket item — matchin
 
 ### Quota validation
 
-Quota is checked by counting `EventRegistrationItem` quantity across capacity-blocking statuses (`pending`, `confirmed`, `checked_in`, `no_show`). Quota is not checked during checkout intent (re-entering checkout for an existing registration). The inventory package is not required; ticket capacity is self-contained.
+Scope capacity is checked via `capacityRemaining()` on the occurrence or session: configured `capacity` minus the summed `total_participants` of registrations in capacity-blocking statuses (`pending`, `confirmed`, `refund_pending`, `checked_in`). Quota is not checked during checkout intent (re-entering checkout for an existing registration). The inventory package is not required; ticket capacity is self-contained.
 
 ### Checkout intent resolver
 
@@ -624,7 +609,10 @@ StartOccurrenceCheckoutAction::make()->handle($target, $registration);
 // Returns CheckoutSession from the commerce pipeline
 ```
 
-The first argument can be either an occurrence or a session.
+The first argument can be either an occurrence or a session. The resolver
+binding itself requires the Orders fulfillment integration; without the
+checkout pipeline the null resolver is bound and the action returns null
+instead of a session.
 
 Override via config `events.integrations.checkout_intent_resolver` or by binding `EventCheckoutIntentResolver`.
 
@@ -670,25 +658,17 @@ Set `events.search.queue_indexing=true` to queue rebuilds instead of writing the
 
 ## Dispatching an event change notice
 
-Publishing a notice goes through the workflow contract, which records the change and
-dispatches `EventChangeNoticePublished`. Delivery is a separate listener step, reached by
-binding `EventChangeNoticeNotificationDispatcher`:
+Publish and retract change notices through the workflow so the change log remains the source of truth:
 
 ```php
 use AIArmada\Events\Contracts\EventChangeNoticeWorkflow;
 
-app(EventChangeNoticeWorkflow::class)->publishNotice($changeLog, [
-    'reason' => 'Venue unavailable',
-]);
-
-app(EventChangeNoticeWorkflow::class)->retractNotice($changeLog);
+$workflow = app(EventChangeNoticeWorkflow::class);
+$workflow->publishNotice($changeLog);
+// $workflow->retractNotice($changeLog);
 ```
 
-The built-in `AIArmada\Events\Services\EventNotificationDispatcher` resolves recipients
-through the bound `EventChangeNoticeAudienceResolver` and sends an
-`EventChangeNoticeNotification` through `aiarmada/communications`. The audience scope comes
-from the change log's `impact_level`: `critical` or `high` targets `registrants`, anything
-else targets `followers`.
+Publishing resolves recipients via the configured audience resolver and delivers through the `aiarmada/communications` manager. Recipients without a mail destination are skipped.
 
 ## Deleting events
 
@@ -696,24 +676,13 @@ Deleting an event cascades through the owned subtree in application logic: occur
 
 ## Finalizing event orders
 
-Order finalization runs on the event path, not from the console. When a registration is checked in,
-`SyncEventOrderCompletionOnRegistrationCheckedIn` dispatches `SyncEventOrderCompletionAction`, which
-fulfils every order item through `FulfillEventOrderItemAction`. Payment and cancellation transitions
-(`SyncEventOrderRegistrationsOnOrderPaid`, `…OnOrderCanceled`, `…OnOrderRefunded`,
-`…OnOrderRefundFailed`) drive the same fulfilment for order-backed registrations.
-
-Per-occurrence finalization is available to applications through the action, which must run inside a
-resolved owner context:
-
-```php
-use AIArmada\Events\Actions\FinalizeOccurredEventOrdersAction;
-use AIArmada\Events\Models\EventOccurrence;
-
-app(FinalizeOccurredEventOrdersAction::class)->handle(EventOccurrence::query()->findOrFail($id));
+```bash
+php artisan events:finalize-orders --global --dry-run
+php artisan events:finalize-orders --owner-type="App\Models\Team" --owner-id=<uuid>
+php artisan events:finalize-orders --global --occurrence=<uuid>
 ```
 
-Item fulfilment is delegated to the bound `EventOrderItemFulfillmentResolver`. The package default
-resolves contact details and returns them without persisting; bind your own resolver to write them.
+The finalize command processes completed occurrences in chunks. It runs under `--owner-type`/`--owner-id`, `--global`, or an already resolved owner context, and refuses to run when none is available.
 
 ## Ownership model
 

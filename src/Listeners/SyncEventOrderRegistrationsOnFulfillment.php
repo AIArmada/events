@@ -7,11 +7,12 @@ namespace AIArmada\Events\Listeners;
 use AIArmada\CommerceSupport\Support\OwnerContext;
 use AIArmada\Events\Actions\SyncEventOrderRegistrationsAction;
 use AIArmada\Events\Support\Integration\CommerceIntegration;
+use AIArmada\Orders\Events\OrderFulfillmentRequired;
 use AIArmada\Orders\Models\Order;
 
-final class SyncEventOrderRegistrationsOnOrderPaid
+final class SyncEventOrderRegistrationsOnFulfillment
 {
-    public function handle(object $event): void
+    public function handle(OrderFulfillmentRequired $event): void
     {
         if (! CommerceIntegration::aiArmadaOrderFulfillmentAvailable()) {
             return;
@@ -19,7 +20,9 @@ final class SyncEventOrderRegistrationsOnOrderPaid
 
         OwnerContext::withOwner($event->order->owner ?? null, function () use ($event): void {
             $action = app(SyncEventOrderRegistrationsAction::class);
-            $action->handle($event->order->id, Order::class, 'paid');
+            // The event carries no payment claim: free orders must not
+            // relabel their 'free' registrations as paid.
+            $action->handle($event->order->id, Order::class, $event->gateway === 'free' ? 'free' : 'paid');
         });
     }
 }

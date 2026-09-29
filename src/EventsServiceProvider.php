@@ -18,6 +18,7 @@ use AIArmada\Events\Actions\RecordWalkInAction;
 use AIArmada\Events\Actions\RegisterForFreeAction;
 use AIArmada\Events\Actions\SyncManagementAssignmentToAuthzAction;
 use AIArmada\Events\Checkout\EventsStepContributor;
+use AIArmada\Events\Console\Commands\FinalizeEventOrdersCommand;
 use AIArmada\Events\Contracts\EventChangeNoticeAudienceResolver;
 use AIArmada\Events\Contracts\EventChangeNoticeNotificationDispatcher;
 use AIArmada\Events\Contracts\EventChangeNoticeWorkflow;
@@ -60,8 +61,8 @@ use AIArmada\Events\Listeners\RestoreTicketInventoryOnRegistrationRefunded;
 use AIArmada\Events\Listeners\RevokePassesOnRegistrationCancelled;
 use AIArmada\Events\Listeners\RevokePassesOnRegistrationRefunded;
 use AIArmada\Events\Listeners\SyncEventOrderCompletionOnRegistrationCheckedIn;
+use AIArmada\Events\Listeners\SyncEventOrderRegistrationsOnFulfillment;
 use AIArmada\Events\Listeners\SyncEventOrderRegistrationsOnOrderCanceled;
-use AIArmada\Events\Listeners\SyncEventOrderRegistrationsOnOrderPaid;
 use AIArmada\Events\Listeners\SyncEventOrderRegistrationsOnOrderRefunded;
 use AIArmada\Events\Listeners\SyncEventOrderRegistrationsOnOrderRefundFailed;
 use AIArmada\Events\Models\EventAttribute;
@@ -116,7 +117,7 @@ use AIArmada\Events\Support\Integration\CommerceIntegration;
 use AIArmada\Events\Support\ModelResolver;
 use AIArmada\FilamentAuthz\FilamentAuthzServiceProvider;
 use AIArmada\Orders\Events\OrderCanceled;
-use AIArmada\Orders\Events\OrderPaid;
+use AIArmada\Orders\Events\OrderFulfillmentRequired;
 use AIArmada\Orders\Events\OrderRefunded;
 use AIArmada\Orders\Events\OrderRefundFailed;
 use AIArmada\Ticketing\Events\PassIssued;
@@ -137,6 +138,7 @@ final class EventsServiceProvider extends PackageServiceProvider
             ->name('events')
             ->hasConfigFile()
             ->hasViews()
+            ->hasCommand(FinalizeEventOrdersCommand::class)
             ->runsMigrations()
             ->discoversMigrations();
     }
@@ -228,7 +230,7 @@ final class EventsServiceProvider extends PackageServiceProvider
             $this->app->bind(EventCheckoutIntentResolver::class, $this->checkoutIntentResolverClass());
 
             $dispatcher = $this->app->make(Dispatcher::class);
-            $dispatcher->listen(OrderPaid::class, SyncEventOrderRegistrationsOnOrderPaid::class);
+            $dispatcher->listen(OrderFulfillmentRequired::class, SyncEventOrderRegistrationsOnFulfillment::class);
             $dispatcher->listen(OrderCanceled::class, SyncEventOrderRegistrationsOnOrderCanceled::class);
             $dispatcher->listen(OrderRefunded::class, SyncEventOrderRegistrationsOnOrderRefunded::class);
             $dispatcher->listen(OrderRefundFailed::class, SyncEventOrderRegistrationsOnOrderRefundFailed::class);
